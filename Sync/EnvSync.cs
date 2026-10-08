@@ -49,6 +49,8 @@ namespace FollowingSeasCoop.Sync
 
         public int Sent { get; private set; }
         public int Received { get; private set; }
+        /// <summary>Guest: the host's world stands still (its game menu, or another player loading).</summary>
+        public bool HostPaused => _latest != null && _latest.TimeScale <= 0f;
 
         public EnvSync(CoopNet net) { _net = net; }
 

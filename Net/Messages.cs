@@ -21,6 +21,8 @@ namespace FollowingSeasCoop.Net
         PlayerState = 11,
         BoatState = 12,
         EnvState = 13,
+        ControlRequest = 14,
+        ControlState = 15,
     }
 
     public interface INetMessage
@@ -52,6 +54,8 @@ namespace FollowingSeasCoop.Net
     {
         public const int Name = 32;
         public const int Text = 200;
+        /// <summary>A control's state string (the game's own rope save string).</summary>
+        public const int ControlText = 400;
         public const int Version = 32;
         public const int RosterEntries = 16;
         /// <summary>Payload bytes of one world chunk. Reliable channels fragment it over the MTU.</summary>
@@ -452,5 +456,81 @@ namespace FollowingSeasCoop.Net
             OceanTime = r.GetFloat(); TimeScale = r.GetFloat();
             Second = r.GetInt(); Minute = r.GetInt(); Hour = r.GetInt(); Day = r.GetInt(); Month = r.GetInt(); Year = r.GetInt();
         }
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // Ship controls
+    // -------------------------------------------------------------------------------------------
+
+    /// <summary>What a control message is about. Wire values: append only.</summary>
+    public enum ControlKind : byte
+    {
+        /// <summary>The wheel or whipstaff. A = wheel angle, B = rudder angle, C = visible rudder angle, degrees.</summary>
+        Steering = 1,
+        /// <summary>A mast's reef. Index = mast, A = how much sail is set, 0..1.</summary>
+        Reef = 2,
+        /// <summary>A rig rope (sheet, brace, halyard). Index = rope, Text = the game's own state string.</summary>
+        Rope = 3,
+        /// <summary>A deck winch (gaff peak, fishing poles). A = angle or joint limit, B = percent, Text = target rotations.</summary>
+        Winch = 4,
+        /// <summary>A door or hatch. A = 1 when the game calls it open.</summary>
+        Door = 5,
+        /// <summary>A lantern. A = 1 when lit.</summary>
+        Lantern = 6,
+        /// <summary>Ballast. A = amount, B = bow/stern balance, C = port/starboard balance.</summary>
+        Ballast = 7,
+        /// <summary>The kedge anchor. B = 1 when laid, A = cable length, Text = the anchor's point in real space.</summary>
+        Anchor = 8,
+        /// <summary>A mooring line. Index = line, A = index of the dock cleat in the world's list, -1 when not moored.</summary>
+        Mooring = 9,
+        /// <summary>Host → clients only: the hull's mass with the water in it. A = kilograms.</summary>
+        Water = 10,
+        /// <summary>Client → host only, a command rather than a state: A = kilograms of water this player pumped out.</summary>
+        Pump = 11,
+    }
+
+    /// <summary>
+    /// The state of one ship control. Controls are addressed by kind and by their index in the
+    /// ship's own lists, which are the same on every machine because the ship is the same prefab.
+    /// </summary>
+    public abstract class ControlMsg : INetMessage
+    {
+        public abstract MsgType Type { get; }
+        public ControlKind Kind;
+        public byte Index;
+        /// <summary>Who has the control in hand; 0 when nobody (the value comes from the host's world).</summary>
+        public uint Holder;
+        public float A, B, C;
+        public string Text = "";
+
+        public void Serialize(NetDataWriter w)
+        {
+            w.Put((byte)Kind);
+            w.Put(Index);
+            w.Put(Holder);
+            w.Put(A); w.Put(B); w.Put(C);
+            w.Put(Text ?? "", Limits.ControlText);
+        }
+
+        public void Deserialize(NetDataReader r)
+        {
+            Kind = (ControlKind)r.GetByte();
+            Index = r.GetByte();
+            Holder = r.GetUInt();
+            A = r.GetFloat(); B = r.GetFloat(); C = r.GetFloat();
+            Text = r.GetString(Limits.ControlText);
+        }
+    }
+
+    /// <summary>Client → host: a control this client has in hand now reads this.</summary>
+    public sealed class ControlRequestMsg : ControlMsg
+    {
+        public override MsgType Type => MsgType.ControlRequest;
+    }
+
+    /// <summary>Host → clients: a control now reads this.</summary>
+    public sealed class ControlStateMsg : ControlMsg
+    {
+        public override MsgType Type => MsgType.ControlState;
     }
 }

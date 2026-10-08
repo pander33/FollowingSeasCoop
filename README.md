@@ -1,9 +1,9 @@
 # Following Seas Co-op
 
 A co-op mod for [Following Seas](https://store.steampowered.com/app/2895440/). Early development
-(v0.1.0, protocol 2): a guest can join the host's world, the players see each other, and the ship, the
-sea, the weather and the time of day are the host's. **Only the host can sail the ship: the controls
-are not shared yet.**
+(v0.1.0, protocol 4): a guest can join the host's world, the players see each other, the ship, the
+sea, the weather and the time of day are the host's, and the ship's controls are
+shared. **Leaks, provisions, the rowboat, cargo, crew orders and money are not shared yet.**
 
 Unofficial; not made or endorsed by Whipstaff Games.
 
@@ -16,6 +16,12 @@ Written and built; only partly tried in game so far.
   are never written while it is in the host's world.
 - Players see each other on deck and ashore.
 - The guest's ship follows the host's; waves, wind, weather and time of day match.
+- Any player can steer, reef, work the sheets and braces, lay the kedge anchor, moor, pump, and use
+  winches, doors, lanterns and ballast.
+  One player at a time works a control; a second player sees who has it.
+- A drowned player is put back aboard instead of being offered a save to load, and the co-op menu
+  has **Return to the ship** for a player left behind in the water.
+- While the host has the game paused, guests cannot move.
 
 ## Install
 

@@ -22,6 +22,8 @@ namespace FollowingSeasCoop.Runtime
         internal PlayerSync Players { get; private set; }
         internal BoatSync Boats { get; private set; }
         internal EnvSync Env { get; private set; }
+        internal ControlsSync Controls { get; private set; }
+        internal PlayerRescue Rescue { get; private set; }
 
         private Harmony _harmony;
         /// <summary>What the menu shows about the last thing that happened ("Connected", an error...).</summary>
@@ -43,6 +45,8 @@ namespace FollowingSeasCoop.Runtime
             Players = new PlayerSync(Net);
             Boats = new BoatSync(Net);
             Env = new EnvSync(Net);
+            Controls = new ControlsSync(Net);
+            Rescue = new PlayerRescue();
 
             Net.OnClientReady += HostOnClientReady;
             Net.OnPlayerLeft += HostOnPlayerLeft;
@@ -58,6 +62,8 @@ namespace FollowingSeasCoop.Runtime
             PatchHealth.Install("Guest world", () => SavePatches.InstallGuestWorld(_harmony), log, required: true);
             PatchHealth.Install("Guest save block", () => SavePatches.InstallGuestSaveBlock(_harmony), log, required: true);
             PatchHealth.Install("Ship", () => BoatSync.Install(_harmony), log);
+            // Without it: no rope trimming by looking at a rope, no door or lantern from a guest, no guest pumping.
+            PatchHealth.Install("Controls", () => ControlsSync.Install(_harmony), log);
             Plugin.Log.LogInfo("Patches: " + PatchHealth.Details);
         }
 
@@ -175,6 +181,9 @@ namespace FollowingSeasCoop.Runtime
             Players.Clear();
             Boats.Clear();
             Env.Clear();
+            Controls.Clear();
+            Rescue.Clear();
+            InputBlock.Set(InputBlock.Reason.HostPause, false);
         }
 
         // -----------------------------------------------------------------
@@ -194,6 +203,8 @@ namespace FollowingSeasCoop.Runtime
                     case MsgType.PlayerState: Players.OnPlayerState((PlayerStateMsg)msg, from); break;
                     case MsgType.BoatState: Boats.OnBoatState((BoatStateMsg)msg); break;
                     case MsgType.EnvState: Env.OnEnvState((EnvStateMsg)msg); break;
+                    case MsgType.ControlRequest: Controls.OnRequest((ControlRequestMsg)msg, from); break;
+                    case MsgType.ControlState: Controls.OnState((ControlStateMsg)msg); break;
                 }
             }
             catch (Exception e)
@@ -212,6 +223,8 @@ namespace FollowingSeasCoop.Runtime
             if (msg.Ok)
             {
                 Net.SetMemberState(netId, MemberJoinState.Ready);
+                // The world it loaded is a few seconds old and holds no wheel angle at all.
+                Controls.MarkAllDirty();
                 Notice = name + " joined";
                 Plugin.Log.LogInfo("[Coop] " + name + " is in the world");
             }
@@ -253,8 +266,13 @@ namespace FollowingSeasCoop.Runtime
                     Boats.FrameTick();
                     // The sea before the players: a guest's wind and waves are the host's from this frame on.
                     if (Net.IsHost) Env.HostTick(); else Env.GuestTick();
+                    Controls.Tick();
+                    string rescued = Rescue.Tick();
+                    if (rescued != null) Flash(rescued);
                     Players.TickLocal();
                 }
+                // A guest cannot walk about a world that stands still.
+                InputBlock.Set(InputBlock.Reason.HostPause, HostPaused);
             }
             catch (Exception e)
             {
@@ -284,13 +302,32 @@ namespace FollowingSeasCoop.Runtime
                 if (_updateErrors++ < 20) Plugin.Log.LogError("[Coop] LateUpdate failed: " + e);
             }
             HoldCursor();
+            try { InputBlock.Tick(); }
+            catch (Exception e)
+            {
+                if (_updateErrors++ < 20) Plugin.Log.LogError("[Coop] Input block failed: " + e);
+            }
         }
 
         private int _updateErrors;
 
+        /// <summary>Guest: the host's world stands still, so this player's input is taken away.</summary>
+        public bool HostPaused => Net.IsClient && Participating && Env.HostPaused;
+
+        private string _flash = "";
+        private float _flashUntil;
+
+        /// <summary>Something the player should see without opening the menu.</summary>
+        private void Flash(string text)
+        {
+            Notice = text;
+            _flash = text;
+            _flashUntil = Time.unscaledTime + 4f;
+        }
+
         private void OnApplicationQuit()
         {
-            try { Net.Stop("The game was closed"); } catch { }
+            try { Net.Stop("The game was closed"); Net.FinishClosing(); } catch { }
         }
     }
 }

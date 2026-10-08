@@ -42,6 +42,8 @@ namespace FollowingSeasCoop.Sync
 
         /// <summary>Guest: this copy's hull follows the host. Read by the patches.</summary>
         public static bool GuestSlave { get; private set; }
+        /// <summary>Guest: how fast the host's hull moves at the moment this copy shows. Read by the patches.</summary>
+        public static Vector3 GuestVelocity { get; private set; }
 
         public BoatSync(CoopNet net) { _net = net; }
 
@@ -152,12 +154,13 @@ namespace FollowingSeasCoop.Sync
         private bool Sample(long serverNow, out double x, out double y, out double z, out Quaternion rot)
         {
             x = y = z = 0.0;
+            GuestVelocity = Vector3.zero;
             rot = Quaternion.identity;
             if (_buf.Count == 0) return false;
             long renderTick = serverNow - Plugin.InterpDelayMs.Value;
 
             Snap first = _buf[0];
-            if (renderTick <= first.Tick) { x = first.X; y = first.Y; z = first.Z; rot = first.Rot; return true; }
+            if (renderTick <= first.Tick) { x = first.X; y = first.Y; z = first.Z; rot = first.Rot; GuestVelocity = first.Vel; return true; }
 
             Snap last = _buf[_buf.Count - 1];
             if (renderTick >= last.Tick)
@@ -165,6 +168,8 @@ namespace FollowingSeasCoop.Sync
                 float ahead = Mathf.Min(renderTick - last.Tick, MaxExtrapolateMs) / 1000f;
                 x = last.X + last.Vel.x * ahead; y = last.Y + last.Vel.y * ahead; z = last.Z + last.Vel.z * ahead;
                 rot = last.Rot;
+                // Past that the host has gone quiet (a pause): the hull stands still here.
+                if (renderTick - last.Tick <= MaxExtrapolateMs) GuestVelocity = last.Vel;
                 return true;
             }
 
@@ -176,6 +181,7 @@ namespace FollowingSeasCoop.Sync
                 float f = span > 0 ? (renderTick - a.Tick) / span : 0f;
                 x = a.X + (b.X - a.X) * f; y = a.Y + (b.Y - a.Y) * f; z = a.Z + (b.Z - a.Z) * f;
                 rot = Quaternion.Slerp(a.Rot, b.Rot, f);
+                GuestVelocity = Vector3.Lerp(a.Vel, b.Vel, f);
                 return true;
             }
             x = last.X; y = last.Y; z = last.Z; rot = last.Rot;
@@ -187,6 +193,7 @@ namespace FollowingSeasCoop.Sync
         {
             _buf.Clear();
             GuestSlave = false;
+            GuestVelocity = Vector3.zero;
             Driving = false;
             _physicsClockSet = false;
             Sent = Received = Teleports = 0;
@@ -209,6 +216,9 @@ namespace FollowingSeasCoop.Sync
             harmony.Patch(AccessTools.Method(typeof(ShipHullMover), "Update")
                               ?? throw new System.MissingMethodException("ShipHullMover", "Update"),
                           prefix: new HarmonyMethod(typeof(BoatSync), nameof(ShipUpdatePrefix)));
+            harmony.Patch(AccessTools.Method(typeof(PlayerHandler), "FixedUpdate")
+                              ?? throw new System.MissingMethodException("PlayerHandler", "FixedUpdate"),
+                          prefix: new HarmonyMethod(typeof(BoatSync), nameof(PlayerFixedPrefix)));
         }
 
         // The game's "Reset" key puts the ship into a mode where the player moves it by hand. On a
@@ -223,6 +233,31 @@ namespace FollowingSeasCoop.Sync
                 if (controller == null) return true;
                 var action = controller.GetInputController().actions.FindAction("Reset");
                 return action == null || !action.WasPressedThisFrame();
+            }, error => Plugin.Log.LogError("[BoatSync] " + error));
+        }
+
+        private static readonly System.Reflection.FieldInfo CrouchingField = AccessTools.Field(typeof(PlayerHandler), "isCrouching");
+
+        // The game carries the player along with the ship by copying the hull's velocity to the
+        // player's body every physics step — but only from a hull that is not kinematic, and a
+        // guest's hull is. While the player stands on the game's level copy of the deck that does not
+        // show; at a heel above 15 degrees the game takes the player off that copy, and the deck
+        // would sail away from under a guest. This gives the guest's body the host's hull velocity,
+        // by the game's own rule.
+        private static void PlayerFixedPrefix(PlayerHandler __instance)
+        {
+            PatchGuard.Run(() =>
+            {
+                if (!GuestSlave || __instance.ship == null) return;
+                ShipHullMover ship = GameAccess.ActiveShip();
+                if (ship == null || __instance.ship != ship.gameObject) return;
+                Rigidbody body = __instance.GetRigidbody();
+                if (body == null || body.isKinematic) return;
+                Vector3 hull = GuestVelocity;
+                Vector3 own = body.linearVelocity;
+                bool crouching = CrouchingField != null && (bool)CrouchingField.GetValue(__instance);
+                float y = crouching && hull.y < 0f ? hull.y * 2f : own.y;
+                body.linearVelocity = new Vector3(hull.x, y, hull.z);
             }, error => Plugin.Log.LogError("[BoatSync] " + error));
         }
     }

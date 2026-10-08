@@ -15,6 +15,7 @@ namespace FollowingSeasCoop.Net
                 case MsgType.Disconnect:
                 case MsgType.TimeSync:
                 case MsgType.ClientWorldLoaded:
+                case MsgType.ControlRequest:
                 case MsgType.PlayerState:
                     return true;
                 default:
@@ -37,6 +38,7 @@ namespace FollowingSeasCoop.Net
                 case MsgType.WorldEnd:
                 case MsgType.BoatState:
                 case MsgType.EnvState:
+                case MsgType.ControlState:
                 case MsgType.PlayerState:
                     return true;
                 default:

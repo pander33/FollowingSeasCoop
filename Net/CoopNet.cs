@@ -44,6 +44,10 @@ namespace FollowingSeasCoop.Net
         private readonly Action<string> _log;
         private readonly EventBasedNetListener _listener = new EventBasedNetListener();
         private NetManager _net;
+        // A session that was ended with a reason: kept alive a moment so the reason arrives.
+        private NetManager _closing;
+        private DateTime _closingUntil;
+        private const double LingerSeconds = 1.5;
 
         public Role Role { get; private set; } = Role.None;
         public LinkState State { get; private set; } = LinkState.Idle;
@@ -201,18 +205,29 @@ namespace FollowingSeasCoop.Net
         /// <summary>Ends the session. The outcome fields (<see cref="LastError"/> and so on) are kept.</summary>
         public void Stop(string reason = null)
         {
+            FinishClosing();
             if (_net != null)
             {
-                if (!string.IsNullOrEmpty(reason))
+                bool linger = false;
+                if (!string.IsNullOrEmpty(reason) && _net.ConnectedPeersCount > 0)
                 {
                     try
                     {
                         var bye = Protocol.Write(new DisconnectMsg { Reason = reason });
                         _net.DisconnectAll(bye.Data, 0, bye.Length);
+                        linger = true;
                     }
                     catch { }
                 }
-                _net.Stop();
+                // The reason travels in the disconnect packet, which LiteNetLib repeats until the
+                // other side confirms it — but only while the manager runs. Stopping it at once
+                // sends the packet a single time, and a lost one leaves the other side with no reason.
+                if (linger)
+                {
+                    _closing = _net;
+                    _closingUntil = DateTime.UtcNow.AddSeconds(LingerSeconds);
+                }
+                else _net.Stop();
                 _net = null;
             }
             _sessions.Clear();
@@ -226,6 +241,14 @@ namespace FollowingSeasCoop.Net
             Role = Role.None;
             State = LinkState.Idle;
             OnRosterChanged?.Invoke();
+        }
+
+        /// <summary>Stops a session that was only waiting for its goodbye to arrive.</summary>
+        public void FinishClosing()
+        {
+            if (_closing == null) return;
+            try { _closing.Stop(); } catch { }
+            _closing = null;
         }
 
         private NetManager NewManager()
@@ -248,6 +271,12 @@ namespace FollowingSeasCoop.Net
 
         public void PollEvents()
         {
+            if (_closing != null)
+            {
+                // Its events arrive with no role set and are ignored by the handlers below.
+                try { _closing.PollEvents(); } catch { }
+                if (_closing != null && DateTime.UtcNow >= _closingUntil) FinishClosing();
+            }
             if (_net == null) return;
             _net.PollEvents();
             if (_net == null) return;   // a callback ended the session

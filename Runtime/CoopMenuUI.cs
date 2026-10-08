@@ -24,7 +24,6 @@ namespace FollowingSeasCoop.Runtime
         private bool _tookCursor;
         private CursorLockMode _cursorLockBefore;
         private bool _cursorVisibleBefore;
-        private bool _blockedInput;
 
         public bool MenuOpen => _menuOpen;
 
@@ -62,25 +61,13 @@ namespace FollowingSeasCoop.Runtime
                 Cursor.lockState = _cursorLockBefore;
                 Cursor.visible = _cursorVisibleBefore;
             }
-            if (_blockedInput)
-            {
-                _blockedInput = false;
-                InteractionController controller = InteractionController.interactionInstance;
-                if (controller != null)
-                {
-                    controller.blockInput = false;
-                    PlayerHandler player = GameAccess.Player;
-                    // The controller copies its own flag to the player every frame; put that value back.
-                    if (player != null) player.disablePlayerInput = controller.disablePlayerInput;
-                }
-            }
+            InputBlock.Set(InputBlock.Reason.Menu, false);
         }
 
         // In the world the game locks the cursor, turns the camera with the mouse and acts on every
         // click and key. While the menu is open the cursor is freed and the game is told to ignore
-        // input — otherwise a click on a menu button also grabs the rope behind it and typing a name
-        // walks the player. InteractionController.blockInput stops its whole LateUpdate (camera and
-        // interactions; the game never sets it itself); disablePlayerInput stops walking and the menu key.
+        // input (InputBlock) — otherwise a click on a menu button also grabs the rope behind it and
+        // typing a name walks the player or turns the wheel.
         private void HoldCursor()
         {
             if (!_menuOpen) return;
@@ -94,14 +81,7 @@ namespace FollowingSeasCoop.Runtime
             {
                 Cursor.lockState = CursorLockMode.None;
                 Cursor.visible = true;
-                InteractionController controller = InteractionController.interactionInstance;
-                if (controller != null)
-                {
-                    controller.blockInput = true;
-                    _blockedInput = true;
-                    PlayerHandler player = GameAccess.Player;
-                    if (player != null) player.disablePlayerInput = true;
-                }
+                InputBlock.Set(InputBlock.Reason.Menu, true);
             }
         }
 
@@ -110,6 +90,10 @@ namespace FollowingSeasCoop.Runtime
             try
             {
                 if (Pause != null && Pause.Active) DrawBanner("Paused: a player is loading the world");
+                else if (HostPaused) DrawBanner("The host has paused the game");
+                else if (Controls != null && Controls.Contested)
+                    DrawBanner(Net.GetPlayerName(Controls.ContestedBy) + " is working this control");
+                else if (Time.unscaledTime < _flashUntil) DrawBanner(_flash);
                 else if (World != null && World.State == GuestWorldState.Receiving)
                     DrawBanner("Receiving the host's world " + Mathf.RoundToInt(World.ReceiveProgress * 100f) + "%");
 
@@ -180,6 +164,15 @@ namespace FollowingSeasCoop.Runtime
                     if (member.NetId == Net.MyNetId) row += "  <- you";
                     GUILayout.Label(row);
                 }
+                if (Participating)
+                {
+                    // For a player left behind in the water: the ship does not wait.
+                    string rescueBlocker = Rescue.Blocker();
+                    GUI.enabled = rescueBlocker == null;
+                    if (GUILayout.Button("Return to the ship")) Flash(Rescue.ReturnToShip());
+                    GUI.enabled = true;
+                    if (rescueBlocker != null) GUILayout.Label("  " + rescueBlocker);
+                }
                 GUILayout.Space(6f);
                 if (GUILayout.Button(Net.IsHost ? "Stop hosting" : "Disconnect")) Disconnect();
             }
@@ -238,6 +231,8 @@ namespace FollowingSeasCoop.Runtime
                 GUILayout.Label("Remote players: " + Players.Describe());
                 GUILayout.Label("Ship sync: " + Boats.Describe());
                 GUILayout.Label("Sea and sky: " + Env.Describe());
+                GUILayout.Label("Controls: " + Controls.Describe());
+                if (Rescue.Rescues > 0) GUILayout.Label("Pulled back aboard: " + Rescue.Rescues);
             }
         }
 
