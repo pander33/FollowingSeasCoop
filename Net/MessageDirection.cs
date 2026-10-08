@@ -35,6 +35,8 @@ namespace FollowingSeasCoop.Net
                 case MsgType.WorldBegin:
                 case MsgType.WorldChunk:
                 case MsgType.WorldEnd:
+                case MsgType.BoatState:
+                case MsgType.EnvState:
                 case MsgType.PlayerState:
                     return true;
                 default:

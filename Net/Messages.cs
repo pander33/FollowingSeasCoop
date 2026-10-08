@@ -19,6 +19,8 @@ namespace FollowingSeasCoop.Net
         WorldEnd = 9,
         ClientWorldLoaded = 10,
         PlayerState = 11,
+        BoatState = 12,
+        EnvState = 13,
     }
 
     public interface INetMessage
@@ -357,6 +359,98 @@ namespace FollowingSeasCoop.Net
             Yaw = r.GetFloat();
             Pitch = r.GetFloat();
             Vx = r.GetFloat(); Vy = r.GetFloat(); Vz = r.GetFloat();
+        }
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // Ship and environment (host → clients)
+    // -------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The player ship's hull as the host's physics has it: position in real space, rotation, and
+    /// the velocities used to extrapolate over a lost packet. Sent unreliably many times a second.
+    /// </summary>
+    public sealed class BoatStateMsg : INetMessage
+    {
+        public MsgType Type => MsgType.BoatState;
+        /// <summary>Host clock, milliseconds, at capture.</summary>
+        public long Tick;
+        public double X, Y, Z;
+        public float Qx, Qy, Qz, Qw;
+        public float Vx, Vy, Vz;
+        /// <summary>Angular velocity, radians per second.</summary>
+        public float Wx, Wy, Wz;
+
+        public void Serialize(NetDataWriter w)
+        {
+            w.Put(Tick);
+            w.Put(X); w.Put(Y); w.Put(Z);
+            w.Put(Qx); w.Put(Qy); w.Put(Qz); w.Put(Qw);
+            w.Put(Vx); w.Put(Vy); w.Put(Vz);
+            w.Put(Wx); w.Put(Wy); w.Put(Wz);
+        }
+
+        public void Deserialize(NetDataReader r)
+        {
+            Tick = r.GetLong();
+            X = r.GetDouble(); Y = r.GetDouble(); Z = r.GetDouble();
+            Qx = r.GetFloat(); Qy = r.GetFloat(); Qz = r.GetFloat(); Qw = r.GetFloat();
+            Vx = r.GetFloat(); Vy = r.GetFloat(); Vz = r.GetFloat();
+            Wx = r.GetFloat(); Wy = r.GetFloat(); Wz = r.GetFloat();
+        }
+    }
+
+    /// <summary>
+    /// Everything that makes the sea and the sky the same on every machine: the weather type, the
+    /// wind, the wave spectrum, the ocean's clock and the time of day. Sent a few times a second;
+    /// each message is the whole state, so a lost one costs nothing.
+    /// </summary>
+    public sealed class EnvStateMsg : INetMessage
+    {
+        public const int SpectrumBands = 14;
+
+        public MsgType Type => MsgType.EnvState;
+        public long Tick;
+        /// <summary>The game's weather type id.</summary>
+        public string WeatherId = "";
+        /// <summary>Wind direction object's rotation, Euler degrees.</summary>
+        public float WindX, WindY, WindZ;
+        /// <summary>Wind strength before gusts, and the gust phase.</summary>
+        public float BaseWind, GustPhase;
+        /// <summary>Wave spectrum: wind speed, chop, gravity scale and the power of each band.</summary>
+        public float WaveWind, Chop, GravityScale;
+        public float[] PowerLog = new float[0];
+        /// <summary>The ocean renderer's clock on the host at <see cref="Tick"/>, and how fast it runs.</summary>
+        public float OceanTime, TimeScale;
+        public int Second, Minute, Hour, Day, Month, Year;
+
+        public void Serialize(NetDataWriter w)
+        {
+            w.Put(Tick);
+            w.Put(WeatherId ?? "", Limits.Name);
+            w.Put(WindX); w.Put(WindY); w.Put(WindZ);
+            w.Put(BaseWind); w.Put(GustPhase);
+            w.Put(WaveWind); w.Put(Chop); w.Put(GravityScale);
+            int bands = PowerLog == null ? 0 : System.Math.Min(PowerLog.Length, SpectrumBands);
+            w.Put((byte)bands);
+            for (int i = 0; i < bands; i++) w.Put(PowerLog[i]);
+            w.Put(OceanTime); w.Put(TimeScale);
+            w.Put(Second); w.Put(Minute); w.Put(Hour); w.Put(Day); w.Put(Month); w.Put(Year);
+        }
+
+        public void Deserialize(NetDataReader r)
+        {
+            Tick = r.GetLong();
+            WeatherId = r.GetString(Limits.Name);
+            WindX = r.GetFloat(); WindY = r.GetFloat(); WindZ = r.GetFloat();
+            BaseWind = r.GetFloat(); GustPhase = r.GetFloat();
+            WaveWind = r.GetFloat(); Chop = r.GetFloat(); GravityScale = r.GetFloat();
+            int bands = r.GetByte();
+            if (bands > SpectrumBands) throw new System.IO.InvalidDataException("Spectrum bands " + bands);
+            PowerLog = new float[bands];
+            for (int i = 0; i < bands; i++) PowerLog[i] = r.GetFloat();
+            OceanTime = r.GetFloat(); TimeScale = r.GetFloat();
+            Second = r.GetInt(); Minute = r.GetInt(); Hour = r.GetInt(); Day = r.GetInt(); Month = r.GetInt(); Year = r.GetInt();
         }
     }
 }

@@ -20,6 +20,8 @@ namespace FollowingSeasCoop.Runtime
         internal WorldTransfer World { get; private set; }
         internal JoinPause Pause { get; private set; }
         internal PlayerSync Players { get; private set; }
+        internal BoatSync Boats { get; private set; }
+        internal EnvSync Env { get; private set; }
 
         private Harmony _harmony;
         /// <summary>What the menu shows about the last thing that happened ("Connected", an error...).</summary>
@@ -39,6 +41,8 @@ namespace FollowingSeasCoop.Runtime
             World = new WorldTransfer(Net, message => Plugin.Log.LogInfo(message));
             Pause = new JoinPause();
             Players = new PlayerSync(Net);
+            Boats = new BoatSync(Net);
+            Env = new EnvSync(Net);
 
             Net.OnClientReady += HostOnClientReady;
             Net.OnPlayerLeft += HostOnPlayerLeft;
@@ -53,6 +57,7 @@ namespace FollowingSeasCoop.Runtime
             // Without these two a guest would load its own save, or overwrite it with the host's world.
             PatchHealth.Install("Guest world", () => SavePatches.InstallGuestWorld(_harmony), log, required: true);
             PatchHealth.Install("Guest save block", () => SavePatches.InstallGuestSaveBlock(_harmony), log, required: true);
+            PatchHealth.Install("Ship", () => BoatSync.Install(_harmony), log);
             Plugin.Log.LogInfo("Patches: " + PatchHealth.Details);
         }
 
@@ -104,7 +109,7 @@ namespace FollowingSeasCoop.Runtime
             {
                 Net.Stop("The host ended the session");
                 Pause.Reset();
-                Players.Clear();
+                ClearWorldState();
                 Notice = "Session ended";
             }
             else if (Net.IsClient)
@@ -152,7 +157,7 @@ namespace FollowingSeasCoop.Runtime
         private void ClientOnLinkLost(string reason)
         {
             Notice = reason;
-            Players.Clear();
+            ClearWorldState();
             World.EndSession();
         }
 
@@ -160,8 +165,16 @@ namespace FollowingSeasCoop.Runtime
         {
             if (Net.IsClient) Net.Stop(reason);
             Notice = reason;
-            Players.Clear();
+            ClearWorldState();
             World.EndSession();
+        }
+
+        // Everything a session put on top of the world: avatars, the slaved hull, the host's sea.
+        private void ClearWorldState()
+        {
+            Players.Clear();
+            Boats.Clear();
+            Env.Clear();
         }
 
         // -----------------------------------------------------------------
@@ -179,6 +192,8 @@ namespace FollowingSeasCoop.Runtime
                     case MsgType.WorldEnd: World.OnEnd((WorldEndMsg)msg); break;
                     case MsgType.ClientWorldLoaded: HostOnWorldLoaded((ClientWorldLoadedMsg)msg, from); break;
                     case MsgType.PlayerState: Players.OnPlayerState((PlayerStateMsg)msg, from); break;
+                    case MsgType.BoatState: Boats.OnBoatState((BoatStateMsg)msg); break;
+                    case MsgType.EnvState: Env.OnEnvState((EnvStateMsg)msg); break;
                 }
             }
             catch (Exception e)
@@ -216,7 +231,7 @@ namespace FollowingSeasCoop.Runtime
             GameAccess.InWorld && (Net.IsHost || (Net.IsClient && World.State == GuestWorldState.InWorld));
 
         // Order matters: the network is pumped first so this frame's state is in; the world state
-        // machine and the pause run before anything that reads the world; players are sent last.
+        // machine and the pause run before anything that reads the world; then the sea, then players.
         private void Update()
         {
             try
@@ -233,11 +248,31 @@ namespace FollowingSeasCoop.Runtime
 
                 World.Tick();
                 Pause.Tick();
-                if (Participating) Players.TickLocal();
+                if (Participating)
+                {
+                    Boats.FrameTick();
+                    // The sea before the players: a guest's wind and waves are the host's from this frame on.
+                    if (Net.IsHost) Env.HostTick(); else Env.GuestTick();
+                    Players.TickLocal();
+                }
             }
             catch (Exception e)
             {
                 if (_updateErrors++ < 20) Plugin.Log.LogError("[Coop] Update failed: " + e);
+            }
+        }
+
+        // The hull is a physics body: the host reads it and the guest moves it on the physics step.
+        private void FixedUpdate()
+        {
+            try
+            {
+                if (!Participating) return;
+                if (Net.IsHost) Boats.HostFixedTick(); else Boats.GuestFixedTick();
+            }
+            catch (Exception e)
+            {
+                if (_updateErrors++ < 20) Plugin.Log.LogError("[Coop] FixedUpdate failed: " + e);
             }
         }
 

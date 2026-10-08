@@ -40,6 +40,8 @@
 
     <!-- Game + Unity (do not copy: provided by the game). -->
     <Reference Include="Assembly-CSharp"><HintPath>$(ManagedDir)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Crest"><HintPath>$(ManagedDir)\Crest.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Enviro3.Runtime"><HintPath>$(ManagedDir)\Enviro3.Runtime.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Newtonsoft.Json"><HintPath>$(ManagedDir)\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Unity.InputSystem"><HintPath>$(ManagedDir)\Unity.InputSystem.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>$(ManagedDir)\UnityEngine.dll</HintPath><Private>false</Private></Reference>

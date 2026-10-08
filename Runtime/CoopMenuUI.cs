@@ -24,7 +24,7 @@ namespace FollowingSeasCoop.Runtime
         private bool _tookCursor;
         private CursorLockMode _cursorLockBefore;
         private bool _cursorVisibleBefore;
-        private bool _dampenedCamera;
+        private bool _blockedInput;
 
         public bool MenuOpen => _menuOpen;
 
@@ -62,16 +62,25 @@ namespace FollowingSeasCoop.Runtime
                 Cursor.lockState = _cursorLockBefore;
                 Cursor.visible = _cursorVisibleBefore;
             }
-            if (_dampenedCamera)
+            if (_blockedInput)
             {
-                _dampenedCamera = false;
+                _blockedInput = false;
                 InteractionController controller = InteractionController.interactionInstance;
-                if (controller != null) controller.dampenCameraMovement = false;
+                if (controller != null)
+                {
+                    controller.blockInput = false;
+                    PlayerHandler player = GameAccess.Player;
+                    // The controller copies its own flag to the player every frame; put that value back.
+                    if (player != null) player.disablePlayerInput = controller.disablePlayerInput;
+                }
             }
         }
 
-        // In the world the game locks the cursor and turns the camera with the mouse. While the menu
-        // is open the cursor is freed and the camera held still, with the game's own flag for that.
+        // In the world the game locks the cursor, turns the camera with the mouse and acts on every
+        // click and key. While the menu is open the cursor is freed and the game is told to ignore
+        // input — otherwise a click on a menu button also grabs the rope behind it and typing a name
+        // walks the player. InteractionController.blockInput stops its whole LateUpdate (camera and
+        // interactions; the game never sets it itself); disablePlayerInput stops walking and the menu key.
         private void HoldCursor()
         {
             if (!_menuOpen) return;
@@ -86,10 +95,12 @@ namespace FollowingSeasCoop.Runtime
                 Cursor.lockState = CursorLockMode.None;
                 Cursor.visible = true;
                 InteractionController controller = InteractionController.interactionInstance;
-                if (controller != null && !controller.dampenCameraMovement)
+                if (controller != null)
                 {
-                    controller.dampenCameraMovement = true;
-                    _dampenedCamera = true;
+                    controller.blockInput = true;
+                    _blockedInput = true;
+                    PlayerHandler player = GameAccess.Player;
+                    if (player != null) player.disablePlayerInput = true;
                 }
             }
         }
@@ -225,6 +236,8 @@ namespace FollowingSeasCoop.Runtime
             {
                 GUILayout.Label("Clock offset " + Net.Clock.OffsetMs.ToString("F0") + " ms   rtt " + Net.RttMs.ToString("F0") + " ms");
                 GUILayout.Label("Remote players: " + Players.Describe());
+                GUILayout.Label("Ship sync: " + Boats.Describe());
+                GUILayout.Label("Sea and sky: " + Env.Describe());
             }
         }
 

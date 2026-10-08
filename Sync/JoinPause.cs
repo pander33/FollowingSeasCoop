@@ -15,6 +15,7 @@ namespace FollowingSeasCoop.Sync
         private readonly Dictionary<uint, float> _loading = new Dictionary<uint, float>();
         private readonly List<uint> _expired = new List<uint>();
         private bool _pausing;
+        private float _scaleBefore = 1f;
 
         public bool Active => _pausing;
         public int LoadingCount => _loading.Count;
@@ -39,6 +40,7 @@ namespace FollowingSeasCoop.Sync
             if (_loading.Count > 0 && GameAccess.InWorld)
             {
                 // The game's own menu sets the scale back to 1 when it closes, so hold it every frame.
+                if (!_pausing && Time.timeScale > 0f) _scaleBefore = Time.timeScale;
                 if (Time.timeScale != 0f) Time.timeScale = 0f;
                 _pausing = true;
             }
@@ -59,7 +61,8 @@ namespace FollowingSeasCoop.Sync
             _pausing = false;
             // The game's pause menu keeps its own pause: timeScale 0 together with dp.paused.
             DataPersistenceManager dp = GameAccess.Dp;
-            Time.timeScale = dp != null && dp.paused ? 0f : 1f;
+            Time.timeScale = dp != null && dp.paused ? 0f : _scaleBefore;
+            _scaleBefore = 1f;
         }
     }
 }

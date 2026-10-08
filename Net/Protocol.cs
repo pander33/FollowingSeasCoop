@@ -14,7 +14,7 @@ namespace FollowingSeasCoop.Net
     public static class Protocol
     {
         /// <summary>Wire protocol version. Increment on any breaking format change.</summary>
-        public const int Version = 1;
+        public const int Version = 2;
 
         /// <summary>Where the net layer reports a dropped packet. Set by the runtime layer.</summary>
         public static Action<string> Warn = _ => { };
@@ -77,6 +77,8 @@ namespace FollowingSeasCoop.Net
                 case MsgType.WorldEnd: return new WorldEndMsg();
                 case MsgType.ClientWorldLoaded: return new ClientWorldLoadedMsg();
                 case MsgType.PlayerState: return new PlayerStateMsg();
+                case MsgType.BoatState: return new BoatStateMsg();
+                case MsgType.EnvState: return new EnvStateMsg();
                 // New message bodies are registered here as they land.
                 default: return null;
             }

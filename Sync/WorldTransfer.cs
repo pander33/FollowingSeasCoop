@@ -33,7 +33,11 @@ namespace FollowingSeasCoop.Sync
         /// <summary>The name the game sees as the save being loaded. No file of this name is written.</summary>
         public const string SessionSaveName = "coop-session";
 
-        /// <summary>Guest: the transferred world as JSON, while the game has yet to read it.</summary>
+        /// <summary>
+        /// Guest: the transferred world as JSON, kept for the whole session. The game reloads the world
+        /// on its own in places (coming back from a side scene); with the data gone it would read a save
+        /// file that does not exist and start a new game instead.
+        /// </summary>
         public static string PendingJson { get; private set; }
 
         /// <summary>Guest: this copy holds (or is loading) the host's world. Saving is blocked.</summary>
@@ -208,8 +212,6 @@ namespace FollowingSeasCoop.Sync
                     {
                         if (_inWorldSince < 0f) _inWorldSince = Time.realtimeSinceStartup;
                         if (Time.realtimeSinceStartup - _inWorldSince < SettleSeconds) return;
-                        // The game read the data in DataPersistenceManager.Start, long before this.
-                        PendingJson = null;
                         State = GuestWorldState.InWorld;
                         _log("[World] In the host's world");
                         _net.SendToHost(new ClientWorldLoadedMsg { Ok = true }, DeliveryMethod.ReliableOrdered);
@@ -222,7 +224,7 @@ namespace FollowingSeasCoop.Sync
 
                 case GuestWorldState.InWorld:
                     // The player used the game's own menu to go back to the title screen.
-                    if (GameAccess.AtMainMenu) Abort("Left the host's world");
+                    if (GameAccess.AtMainMenu) Abort("Left the host's world", loadFailed: false);
                     break;
 
                 case GuestWorldState.Leaving:
@@ -269,6 +271,8 @@ namespace FollowingSeasCoop.Sync
                 case GuestWorldState.Leaving:
                     return;
                 case GuestWorldState.Receiving:
+                    PendingJson = null;
+                    GuestWorld = false;
                     State = GuestWorldState.None;
                     return;
                 default:
@@ -277,11 +281,11 @@ namespace FollowingSeasCoop.Sync
             }
         }
 
-        private void Abort(string reason)
+        private void Abort(string reason, bool loadFailed = true)
         {
             LastError = reason;
             _log("[World] " + reason);
-            if (_net.IsClient) _net.SendToHost(new ClientWorldLoadedMsg { Ok = false, Detail = reason }, DeliveryMethod.ReliableOrdered);
+            if (loadFailed && _net.IsClient) _net.SendToHost(new ClientWorldLoadedMsg { Ok = false, Detail = reason }, DeliveryMethod.ReliableOrdered);
             OnGuestAbort?.Invoke(reason);
         }
 
