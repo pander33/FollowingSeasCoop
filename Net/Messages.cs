@@ -23,6 +23,9 @@ namespace FollowingSeasCoop.Net
         EnvState = 13,
         ControlRequest = 14,
         ControlState = 15,
+        ItemManifest = 16,
+        ItemAction = 17,
+        ItemState = 18,
     }
 
     public interface INetMessage

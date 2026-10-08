@@ -194,6 +194,7 @@ namespace FollowingSeasCoop.Runtime
         private bool _debugOpen;
         private string _saveName = "CoopSave";
         private string _saveNotice = "";
+        private string _itemsNotice = "";
 
         private void DrawDebug()
         {
@@ -211,6 +212,10 @@ namespace FollowingSeasCoop.Runtime
             else if (!string.IsNullOrEmpty(_saveNotice)) GUILayout.Label("  " + _saveNotice);
 
             GUILayout.Space(4f);
+            GUI.enabled = GameAccess.InWorld;
+            if (GUILayout.Button("Dump items")) DumpItems();
+            GUI.enabled = true;
+            if (!string.IsNullOrEmpty(_itemsNotice)) GUILayout.Label(_itemsNotice);
             GUILayout.Label("Patches: " + PatchHealth.Details);
             GUILayout.Label("Protocol " + Protocol.Version + "   NetId " + Net.MyNetId + "   world " + World.State);
             GUILayout.Label("Scene: " + (GameAccess.InWorld ? "world" : GameAccess.AtMainMenu ? "title screen" : "other"));
@@ -232,7 +237,26 @@ namespace FollowingSeasCoop.Runtime
                 GUILayout.Label("Ship sync: " + Boats.Describe());
                 GUILayout.Label("Sea and sky: " + Env.Describe());
                 GUILayout.Label("Controls: " + Controls.Describe());
+                GUILayout.Label("Items: " + Items.Describe());
                 if (Rescue.Rescues > 0) GUILayout.Label("Pulled back aboard: " + Rescue.Rescues);
+            }
+        }
+
+        /// <summary>Writes the I0 catalog without saving or changing the world.</summary>
+        public string DumpItems()
+        {
+            try
+            {
+                string path = ItemCatalog.Write(this);
+                _itemsNotice = "Items written to " + path;
+                Plugin.Log.LogInfo("[Items] " + _itemsNotice);
+                return path;
+            }
+            catch (Exception e)
+            {
+                _itemsNotice = "Item dump failed: " + e.Message;
+                Plugin.Log.LogError("[Items] " + e);
+                return null;
             }
         }
 

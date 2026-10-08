@@ -16,6 +16,7 @@ namespace FollowingSeasCoop.Net
                 case MsgType.TimeSync:
                 case MsgType.ClientWorldLoaded:
                 case MsgType.ControlRequest:
+                case MsgType.ItemAction:
                 case MsgType.PlayerState:
                     return true;
                 default:
@@ -39,6 +40,8 @@ namespace FollowingSeasCoop.Net
                 case MsgType.BoatState:
                 case MsgType.EnvState:
                 case MsgType.ControlState:
+                case MsgType.ItemManifest:
+                case MsgType.ItemState:
                 case MsgType.PlayerState:
                     return true;
                 default:

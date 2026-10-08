@@ -12,3 +12,6 @@ GAME_INTERACTIONS.md
 
 # Decompiled game code must never be committed.
 _decompiled/
+/.idea
+/.omo
+/СОСТОЯНИЕ.md.items-plan-2026-10-08.bak

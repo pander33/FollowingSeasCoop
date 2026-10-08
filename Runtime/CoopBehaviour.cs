@@ -4,6 +4,7 @@ using FollowingSeasCoop.Sync;
 using HarmonyLib;
 using LiteNetLib;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace FollowingSeasCoop.Runtime
 {
@@ -24,6 +25,7 @@ namespace FollowingSeasCoop.Runtime
         internal EnvSync Env { get; private set; }
         internal ControlsSync Controls { get; private set; }
         internal PlayerRescue Rescue { get; private set; }
+        internal ItemRegistry Items { get; private set; }
 
         private Harmony _harmony;
         /// <summary>What the menu shows about the last thing that happened ("Connected", an error...).</summary>
@@ -47,6 +49,8 @@ namespace FollowingSeasCoop.Runtime
             Env = new EnvSync(Net);
             Controls = new ControlsSync(Net);
             Rescue = new PlayerRescue();
+            Items = new ItemRegistry(Net);
+            SceneManager.sceneUnloaded += Items.WorldUnloaded;
 
             Net.OnClientReady += HostOnClientReady;
             Net.OnPlayerLeft += HostOnPlayerLeft;
@@ -64,6 +68,7 @@ namespace FollowingSeasCoop.Runtime
             PatchHealth.Install("Ship", () => BoatSync.Install(_harmony), log);
             // Without it: no rope trimming by looking at a rope, no door or lantern from a guest, no guest pumping.
             PatchHealth.Install("Controls", () => ControlsSync.Install(_harmony), log);
+            PatchHealth.Install("Item catalog", () => ItemCatalog.Install(_harmony), log);
             Plugin.Log.LogInfo("Patches: " + PatchHealth.Details);
         }
 
@@ -140,6 +145,7 @@ namespace FollowingSeasCoop.Runtime
 
         private void HostOnClientReady(PeerSession session)
         {
+            Items.CaptureCargoKeys(session.PlayerNetId);
             if (!World.HostSend(session))
             {
                 Net.DisconnectPlayer(session.PlayerNetId, "The host could not send its world");
@@ -153,6 +159,7 @@ namespace FollowingSeasCoop.Runtime
         {
             Pause.End(netId);
             Players.Remove(netId);
+            Items.RemovePlayer(netId);
             Notice = "A player left";
         }
 
@@ -183,6 +190,7 @@ namespace FollowingSeasCoop.Runtime
             Env.Clear();
             Controls.Clear();
             Rescue.Clear();
+            Items.Clear();
             InputBlock.Set(InputBlock.Reason.HostPause, false);
         }
 
@@ -205,6 +213,12 @@ namespace FollowingSeasCoop.Runtime
                     case MsgType.EnvState: Env.OnEnvState((EnvStateMsg)msg); break;
                     case MsgType.ControlRequest: Controls.OnRequest((ControlRequestMsg)msg, from); break;
                     case MsgType.ControlState: Controls.OnState((ControlStateMsg)msg); break;
+                    case MsgType.ItemManifest: Items.OnManifest((ItemManifestMsg)msg); break;
+                    case MsgType.ItemState: Items.OnState((ItemStateMsg)msg); break;
+                    case MsgType.ItemAction:
+                        if (Net.IsHost && ((ItemActionMsg)msg).Action == ItemActionKind.Manifest)
+                            Items.SendManifest(Net.PlayerNetIdForPeer(from));
+                        break;
                 }
             }
             catch (Exception e)
@@ -225,6 +239,7 @@ namespace FollowingSeasCoop.Runtime
                 Net.SetMemberState(netId, MemberJoinState.Ready);
                 // The world it loaded is a few seconds old and holds no wheel angle at all.
                 Controls.MarkAllDirty();
+                Items.SendManifest(netId);
                 Notice = name + " joined";
                 Plugin.Log.LogInfo("[Coop] " + name + " is in the world");
             }
@@ -267,6 +282,7 @@ namespace FollowingSeasCoop.Runtime
                     // The sea before the players: a guest's wind and waves are the host's from this frame on.
                     if (Net.IsHost) Env.HostTick(); else Env.GuestTick();
                     Controls.Tick();
+                    Items.Tick();
                     string rescued = Rescue.Tick();
                     if (rescued != null) Flash(rescued);
                     Players.TickLocal();
@@ -328,6 +344,11 @@ namespace FollowingSeasCoop.Runtime
         private void OnApplicationQuit()
         {
             try { Net.Stop("The game was closed"); Net.FinishClosing(); } catch { }
+        }
+
+        private void OnDestroy()
+        {
+            if (Items != null) SceneManager.sceneUnloaded -= Items.WorldUnloaded;
         }
     }
 }
