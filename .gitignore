@@ -1,0 +1,14 @@
+bin/
+obj/
+dist/
+.vs/
+*.user
+
+# Working documents, kept out of the public repository (as in SailwindCoop).
+CLAUDE.md
+AGENTS.md
+СОСТОЯНИЕ.md
+GAME_INTERACTIONS.md
+
+# Decompiled game code must never be committed.
+_decompiled/

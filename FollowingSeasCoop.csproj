@@ -1,0 +1,70 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Following Seas Co-op — BepInEx 5 plugin.
+    The game is Unity 6000.3 on Mono and its assemblies target .NET Standard 2.1, so this does too.
+    Builds straight into the game's BepInEx/plugins/FollowingSeasCoop folder. See CLAUDE.md.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>FollowingSeasCoop</AssemblyName>
+    <RootNamespace>FollowingSeasCoop</RootNamespace>
+    <LangVersion>9.0</LangVersion>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <Deterministic>true</Deterministic>
+    <DebugType>none</DebugType>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <Configuration Condition="'$(Configuration)'==''">Release</Configuration>
+
+    <!-- Absolute path to the game copy the mod is built into. Adjust GameDir if it moves. -->
+    <GameDir Condition="'$(GameDir)'==''">B:\FollowingSeasModTest</GameDir>
+    <ManagedDir>$(GameDir)\Following Seas_Data\Managed</ManagedDir>
+    <BepInExCore>$(GameDir)\BepInEx\core</BepInExCore>
+    <PluginDir>$(GameDir)\BepInEx\plugins\FollowingSeasCoop</PluginDir>
+    <OutputPath>$(PluginDir)\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Tools\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- BepInEx + Harmony (do not copy: provided by the loader). -->
+    <Reference Include="BepInEx"><HintPath>$(BepInExCore)\BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(BepInExCore)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+
+    <!-- Transport. Copied next to the plugin DLL (Private=true). -->
+    <Reference Include="LiteNetLib"><HintPath>$(MSBuildProjectDirectory)\libs\LiteNetLib.dll</HintPath><Private>true</Private></Reference>
+
+    <!-- Game + Unity (do not copy: provided by the game). -->
+    <Reference Include="Assembly-CSharp"><HintPath>$(ManagedDir)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(ManagedDir)\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.InputSystem"><HintPath>$(ManagedDir)\Unity.InputSystem.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(ManagedDir)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(ManagedDir)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(ManagedDir)\UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(ManagedDir)\UnityEngine.IMGUIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.TextRenderingModule"><HintPath>$(ManagedDir)\UnityEngine.TextRenderingModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.AnimationModule"><HintPath>$(ManagedDir)\UnityEngine.AnimationModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.JSONSerializeModule"><HintPath>$(ManagedDir)\UnityEngine.JSONSerializeModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(ManagedDir)\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <!--
+    The netstandard2.0 LiteNetLib can drag BCL facade shims into the output. Unity Mono provides
+    those at runtime; shipping them into BepInEx/plugins can cause assembly load conflicts.
+    Strip everything except our DLL and LiteNetLib after each build.
+  -->
+  <Target Name="StripFacades" AfterTargets="Build">
+    <ItemGroup>
+      <_Keep Include="$(OutputPath)FollowingSeasCoop.dll" />
+      <_Keep Include="$(OutputPath)LiteNetLib.dll" />
+      <_AllDlls Include="$(OutputPath)*.dll" />
+      <_Strip Include="@(_AllDlls)" Exclude="@(_Keep)" />
+    </ItemGroup>
+    <Delete Files="@(_Strip)" />
+  </Target>
+
+</Project>

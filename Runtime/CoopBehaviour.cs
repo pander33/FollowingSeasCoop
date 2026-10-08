@@ -1,0 +1,261 @@
+using System;
+using FollowingSeasCoop.Net;
+using FollowingSeasCoop.Sync;
+using HarmonyLib;
+using LiteNetLib;
+using UnityEngine;
+
+namespace FollowingSeasCoop.Runtime
+{
+    /// <summary>
+    /// The single MonoBehaviour that owns the loop: the session (<see cref="CoopNet"/>), every
+    /// <c>*Sync</c> instance, the Harmony instance and the IMGUI surfaces. Lives for the whole
+    /// process (DontDestroyOnLoad).
+    /// </summary>
+    public sealed partial class CoopBehaviour : MonoBehaviour
+    {
+        public static CoopBehaviour Instance { get; private set; }
+
+        public CoopNet Net { get; private set; }
+        internal WorldTransfer World { get; private set; }
+        internal JoinPause Pause { get; private set; }
+        internal PlayerSync Players { get; private set; }
+
+        private Harmony _harmony;
+        /// <summary>What the menu shows about the last thing that happened ("Connected", an error...).</summary>
+        public string Notice { get; private set; } = "";
+
+        private void Awake()
+        {
+            Instance = this;
+            Protocol.Warn = message => Plugin.Log.LogWarning(message);
+
+            Net = new CoopNet(message => Plugin.Log.LogInfo(message))
+            {
+                ModVersion = Plugin.Version,
+                GameVersion = Application.version ?? "",
+                JoinBlocker = HostJoinBlocker,
+            };
+            World = new WorldTransfer(Net, message => Plugin.Log.LogInfo(message));
+            Pause = new JoinPause();
+            Players = new PlayerSync(Net);
+
+            Net.OnClientReady += HostOnClientReady;
+            Net.OnPlayerLeft += HostOnPlayerLeft;
+            Net.OnAccepted += ack => Notice = "Connected to " + ack.HostName + ", receiving the world";
+            Net.OnLinkLost += ClientOnLinkLost;
+            Net.OnGameMessage += OnGameMessage;
+            World.OnGuestAbort += reason => EndClientSession(reason);
+
+            _harmony = new Harmony(Plugin.Guid);
+            Action<string> log = message => Plugin.Log.LogError(message);
+            PatchHealth.Install("Save folder", () => SavePatches.InstallSaveDir(_harmony), log);
+            // Without these two a guest would load its own save, or overwrite it with the host's world.
+            PatchHealth.Install("Guest world", () => SavePatches.InstallGuestWorld(_harmony), log, required: true);
+            PatchHealth.Install("Guest save block", () => SavePatches.InstallGuestSaveBlock(_harmony), log, required: true);
+            Plugin.Log.LogInfo("Patches: " + PatchHealth.Details);
+        }
+
+        // -----------------------------------------------------------------
+        // Session control (the menu and the dev console call these)
+        // -----------------------------------------------------------------
+
+        /// <summary>Null when hosting may start now, otherwise why not.</summary>
+        public string HostBlocker()
+        {
+            if (PatchHealth.Blocker != null) return "The mod does not fit this game version: " + PatchHealth.Blocker;
+            if (WorldTransfer.GuestWorld) return "Still leaving the previous session";
+            if (!GameAccess.InWorld) return "Load your world first, then host";
+            return null;
+        }
+
+        /// <summary>Null when a join may start now, otherwise why not.</summary>
+        public string JoinBlocker()
+        {
+            if (PatchHealth.Blocker != null) return "The mod does not fit this game version: " + PatchHealth.Blocker;
+            if (WorldTransfer.GuestWorld) return "Still leaving the previous session";
+            if (!GameAccess.AtMainMenu) return "Join from the title screen";
+            return null;
+        }
+
+        public bool Host()
+        {
+            string blocker = HostBlocker();
+            if (blocker != null) { Notice = blocker; return false; }
+            ApplyConfig();
+            Net.StartHost(Plugin.Port.Value);
+            Notice = Net.IsHost ? "Hosting on port " + Plugin.Port.Value : Net.LastError;
+            return Net.IsHost;
+        }
+
+        public bool Join(string ip)
+        {
+            string blocker = JoinBlocker();
+            if (blocker != null) { Notice = blocker; return false; }
+            ApplyConfig();
+            Net.StartClient(string.IsNullOrEmpty(ip) ? Plugin.JoinIp.Value : ip.Trim(), Plugin.Port.Value);
+            Notice = Net.IsClient ? "Connecting to " + Net.HostLabel + " ..." : Net.LastError;
+            return Net.IsClient;
+        }
+
+        public void Disconnect()
+        {
+            if (Net.IsHost)
+            {
+                Net.Stop("The host ended the session");
+                Pause.Reset();
+                Players.Clear();
+                Notice = "Session ended";
+            }
+            else if (Net.IsClient)
+            {
+                EndClientSession("Disconnected");
+            }
+        }
+
+        private void ApplyConfig()
+        {
+            Net.PlayerName = string.IsNullOrEmpty(Plugin.PlayerName.Value) ? "Player" : Plugin.PlayerName.Value;
+            Net.MaxClients = Mathf.Clamp(Plugin.MaxClients.Value, 1, Limits.RosterEntries - 1);
+            Net.DisconnectTimeoutMs = Plugin.DisconnectTimeoutMs.Value;
+        }
+
+        // -----------------------------------------------------------------
+        // Host side
+        // -----------------------------------------------------------------
+
+        // Asked by the handshake: a guest can only be given a world that is loaded.
+        private string HostJoinBlocker() => GameAccess.InWorld ? null : "the host has no world loaded";
+
+        private void HostOnClientReady(PeerSession session)
+        {
+            if (!World.HostSend(session))
+            {
+                Net.DisconnectPlayer(session.PlayerNetId, "The host could not send its world");
+                return;
+            }
+            Pause.Begin(session.PlayerNetId);
+            Notice = session.PlayerName + " is loading the world";
+        }
+
+        private void HostOnPlayerLeft(uint netId)
+        {
+            Pause.End(netId);
+            Players.Remove(netId);
+            Notice = "A player left";
+        }
+
+        // -----------------------------------------------------------------
+        // Client side
+        // -----------------------------------------------------------------
+
+        private void ClientOnLinkLost(string reason)
+        {
+            Notice = reason;
+            Players.Clear();
+            World.EndSession();
+        }
+
+        private void EndClientSession(string reason)
+        {
+            if (Net.IsClient) Net.Stop(reason);
+            Notice = reason;
+            Players.Clear();
+            World.EndSession();
+        }
+
+        // -----------------------------------------------------------------
+        // Messages
+        // -----------------------------------------------------------------
+
+        private void OnGameMessage(MsgType type, INetMessage msg, NetPeer from)
+        {
+            try
+            {
+                switch (type)
+                {
+                    case MsgType.WorldBegin: World.OnBegin((WorldBeginMsg)msg); break;
+                    case MsgType.WorldChunk: World.OnChunk((WorldChunkMsg)msg); break;
+                    case MsgType.WorldEnd: World.OnEnd((WorldEndMsg)msg); break;
+                    case MsgType.ClientWorldLoaded: HostOnWorldLoaded((ClientWorldLoadedMsg)msg, from); break;
+                    case MsgType.PlayerState: Players.OnPlayerState((PlayerStateMsg)msg, from); break;
+                }
+            }
+            catch (Exception e)
+            {
+                // One bad message must not take the frame's remaining messages with it.
+                Plugin.Log.LogError("[Coop] " + type + " handler failed: " + e);
+            }
+        }
+
+        private void HostOnWorldLoaded(ClientWorldLoadedMsg msg, NetPeer from)
+        {
+            uint netId = Net.PlayerNetIdForPeer(from);
+            if (netId == 0) return;
+            Pause.End(netId);
+            string name = Net.GetPlayerName(netId);
+            if (msg.Ok)
+            {
+                Net.SetMemberState(netId, MemberJoinState.Ready);
+                Notice = name + " joined";
+                Plugin.Log.LogInfo("[Coop] " + name + " is in the world");
+            }
+            else
+            {
+                Notice = name + " could not load the world";
+                Plugin.Log.LogWarning("[Coop] " + name + " could not load the world: " + msg.Detail);
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // Loop
+        // -----------------------------------------------------------------
+
+        /// <summary>This copy is in the shared world and exchanges gameplay state.</summary>
+        public bool Participating =>
+            GameAccess.InWorld && (Net.IsHost || (Net.IsClient && World.State == GuestWorldState.InWorld));
+
+        // Order matters: the network is pumped first so this frame's state is in; the world state
+        // machine and the pause run before anything that reads the world; players are sent last.
+        private void Update()
+        {
+            try
+            {
+                TickMenuKey();
+                Net.PollEvents();
+
+                // The host left its world through the game's menu: there is nothing left to host.
+                if (Net.IsHost && !GameAccess.InWorld)
+                {
+                    Plugin.Log.LogInfo("[Coop] The host's world is gone; ending the session");
+                    Disconnect();
+                }
+
+                World.Tick();
+                Pause.Tick();
+                if (Participating) Players.TickLocal();
+            }
+            catch (Exception e)
+            {
+                if (_updateErrors++ < 20) Plugin.Log.LogError("[Coop] Update failed: " + e);
+            }
+        }
+
+        private void LateUpdate()
+        {
+            try { Players.ApplyRemotes(); }
+            catch (Exception e)
+            {
+                if (_updateErrors++ < 20) Plugin.Log.LogError("[Coop] LateUpdate failed: " + e);
+            }
+            HoldCursor();
+        }
+
+        private int _updateErrors;
+
+        private void OnApplicationQuit()
+        {
+            try { Net.Stop("The game was closed"); } catch { }
+        }
+    }
+}
