@@ -1,6 +1,6 @@
 # Third-party notices
 
-Following Seas Co-op is distributed with the following library.
+Following Seas Co-op is distributed with the following libraries.
 
 ## LiteNetLib
 
@@ -29,6 +29,18 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Facepunch.Steamworks
+
+<https://github.com/Facepunch/Facepunch.Steamworks> — `Facepunch.Steamworks.Win64.dll`, unmodified.
+MIT License, Copyright (c) Facepunch Studios Ltd; the full text is in that repository's `LICENSE`
+file.
+
+## Steamworks SDK
+
+`steam_api64.dll` is Valve Corporation's library from the Steamworks SDK, unmodified. It is not
+open source and is not covered by this mod's license; it is redistributed as the Steamworks SDK
+allows, for use with Steam.
 
 ## Not included
 

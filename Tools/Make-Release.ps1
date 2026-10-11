@@ -8,6 +8,8 @@
     3. Packs dist\FollowingSeasCoop-<version>.zip:
          BepInEx\plugins\FollowingSeasCoop\FollowingSeasCoop.dll
          BepInEx\plugins\FollowingSeasCoop\LiteNetLib.dll
+         BepInEx\plugins\FollowingSeasCoop\Facepunch.Steamworks.Win64.dll
+         BepInEx\plugins\FollowingSeasCoop\steam_api64.dll
          BepInEx\plugins\FollowingSeasCoop\README.md
          BepInEx\plugins\FollowingSeasCoop\LICENSE
          BepInEx\plugins\FollowingSeasCoop\THIRD-PARTY-NOTICES.md
@@ -46,6 +48,8 @@ $plugin = Join-Path $GameDir 'BepInEx\plugins\FollowingSeasCoop'
 $files = @(
     (Join-Path $plugin 'FollowingSeasCoop.dll'),
     (Join-Path $plugin 'LiteNetLib.dll'),
+    (Join-Path $plugin 'Facepunch.Steamworks.Win64.dll'),
+    (Join-Path $plugin 'steam_api64.dll'),
     (Join-Path $root 'README.md'),
     (Join-Path $root 'LICENSE'),
     (Join-Path $root 'THIRD-PARTY-NOTICES.md')

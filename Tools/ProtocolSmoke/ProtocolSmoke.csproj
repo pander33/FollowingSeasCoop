@@ -18,6 +18,8 @@
   <ItemGroup>
     <Compile Include="..\..\Net\*.cs" LinkBase="Net" />
     <Reference Include="LiteNetLib"><HintPath>..\..\libs\LiteNetLib.dll</HintPath><Private>true</Private></Reference>
+    <!-- Net/SteamLink.cs names Steam types. Needed to compile only: nothing here starts Steam. -->
+    <Reference Include="Facepunch.Steamworks.Win64"><HintPath>..\..\libs\Facepunch.Steamworks.Win64.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 
 </Project>

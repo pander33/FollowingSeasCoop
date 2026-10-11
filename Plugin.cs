@@ -21,6 +21,8 @@ namespace FollowingSeasCoop
         internal static ConfigEntry<string> JoinIp;
         internal static ConfigEntry<int> MaxClients;
         internal static ConfigEntry<bool> AnnounceOnLan;
+        internal static ConfigEntry<bool> SteamEnabled;
+        internal static ConfigEntry<bool> SteamFriendsOnly;
         internal static ConfigEntry<int> DisconnectTimeoutMs;
         internal static ConfigEntry<int> SendRateHz;
         internal static ConfigEntry<int> InterpDelayMs;
@@ -48,6 +50,10 @@ namespace FollowingSeasCoop
             MaxClients = Config.Bind("Network", "MaxClients", 3, "How many guests the host accepts.");
             AnnounceOnLan = Config.Bind("Network", "AnnounceOnLan", true,
                 "The host answers players of the local network who look for a game, so it appears in their Co-op dialog. Off = the game is joined by address only. Applied when hosting starts.");
+            SteamEnabled = Config.Bind("Steam", "Enabled", true,
+                "Host and join through Steam as well as by address: Steam friends see a hosted game in the Co-op dialog and in their friends list, with no address and no port forwarding. Steam must be running. Set on the Co-op page.");
+            SteamFriendsOnly = Config.Bind("Steam", "FriendsOnly", false,
+                "A host over Steam lets in its Steam friends only, and nobody by address. Off = anyone who has the host's Steam ID or address. Set on the Co-op page.");
             DisconnectTimeoutMs = Config.Bind("Network", "DisconnectTimeoutMs", 15000,
                 "Silence after which a link is considered lost. A world load blocks the game for seconds, so keep it generous.");
             SendRateHz = Config.Bind("Sync", "SendRateHz", 20, "How many times a second a player's pose is sent.");

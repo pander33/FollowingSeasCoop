@@ -145,7 +145,9 @@ joins by itself. The windows are kept windowed and in place by the plugin (`Dev/
 the game goes to full screen by itself at the title screen. The game remembers the window size it
 was started with: after this script it starts at that size until its options are confirmed.
 The guest keeps its saves in `<GameDir>\_guest-saves`. `-LagMs` is per copy, so a message one way
-takes that long and an answer twice that.
+takes that long and an answer twice that. Both copies are started with `Steam/Enabled` off (they
+are one Steam account, which cannot join itself); `-Steam` leaves it on. A session over Steam
+needs two PCs with two accounts.
 
 ## A session with everything on
 

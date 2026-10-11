@@ -126,6 +126,7 @@ namespace FollowingSeasCoop.Runtime
             string line = role + "  " + Net.State;
             if (Net.IsClient) line += "  world " + World.State + "  rtt " + Net.RttMs.ToString("F0") + " ms";
             line += "  players " + Net.RosterSnapshot.Length;
+            if (Net.OverSteam) line += "  " + Net.TransportStatus;
             if (Net.LagMs > 0 || Net.JitterMs > 0) line += "  LAG " + Net.LagMs + "+" + Net.JitterMs + " ms (Dev/LagMs)";
             GUI.Label(new Rect(10f, Screen.height - 26f, 700f, 22f), "Co-op: " + line);
         }

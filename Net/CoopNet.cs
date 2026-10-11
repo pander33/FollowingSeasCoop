@@ -18,6 +18,8 @@ namespace FollowingSeasCoop.Net
         public uint PlayerNetId;
         public string PlayerName = "";
         public MemberJoinState JoinState = MemberJoinState.Handshaking;
+        /// <summary>SteamID64 of a player who came over Steam; 0 for one who came by address.</summary>
+        public ulong SteamId;
     }
 
     public sealed class SessionMemberInfo
@@ -49,6 +51,12 @@ namespace FollowingSeasCoop.Net
         private NetManager _closing;
         private DateTime _closingUntil;
         private const double LingerSeconds = 1.5;
+        // Steam: carries this session's datagrams; the goodbye of a closing session goes the same way.
+        private DatagramTunnel _tunnel, _closingTunnel;
+        private bool _steamFriendsOnly;
+        private bool _steamAdvertised;
+        // Steam may need many seconds to open a route through NAT or its relay servers.
+        private const int SteamConnectMs = 30000;
 
         public Role Role { get; private set; } = Role.None;
         public LinkState State { get; private set; } = LinkState.Idle;
@@ -150,7 +158,7 @@ namespace FollowingSeasCoop.Net
         {
             try
             {
-                if (Role != Role.Host || _net == null || !AnnounceOnLan) return;
+                if (Role != Role.Host || _net == null || !AnnounceOnLan || SteamFriendsOnly) return;
                 if (!LanBeacon.IsQuery(reader)) return;
                 // The port may be reachable from outside the LAN: never more than a few small answers.
                 long now = Clock.LocalTick;
@@ -179,6 +187,15 @@ namespace FollowingSeasCoop.Net
         public bool IsHost => Role == Role.Host;
         public bool IsClient => Role == Role.Client;
         public bool Closing => _closing != null;
+        /// <summary>The session's datagrams also travel over Steam (host) or only over Steam (client).</summary>
+        public bool OverSteam => _tunnel != null;
+        /// <summary>Steam host: only Steam friends are let in, and nobody by address.</summary>
+        public bool SteamFriendsOnly => Role == Role.Host && OverSteam && _steamFriendsOnly;
+        /// <summary>Diagnostics: what went through the Steam tunnel; empty for a session by address.</summary>
+        public string TransportStatus => !OverSteam ? "" :
+            "steam out=" + _tunnel.SentToRelay + " in=" + _tunnel.ReceivedFromRelay +
+            (Role == Role.Host ? " links=" + _tunnel.LinkCount : "") +
+            (string.IsNullOrEmpty(_tunnel.LastError) ? "" : " error=" + _tunnel.LastError);
         public SessionMemberInfo[] RosterSnapshot => (SessionMemberInfo[])_roster.Clone();
 
         public string GetPlayerName(uint netId)
@@ -248,14 +265,74 @@ namespace FollowingSeasCoop.Net
             _log("[CoopNet] Host listening on port " + port + " (protocol " + Protocol.Version + ")");
         }
 
+        /// <summary>
+        /// Host over Steam as well as by address: the same LiteNetLib host, and a tunnel that feeds
+        /// it the datagrams of Steam players through loopback. When Steam is not available the
+        /// host stays up by address and <see cref="LastError"/> says why.
+        /// </summary>
+        public void StartSteamHost(int port, bool friendsOnly)
+        {
+            StartHost(port);
+            if (Role != Role.Host) return;
+            IDatagramRelay relay = SteamLink.OpenHost(friendsOnly);
+            if (relay == null)
+            {
+                LastError = SteamLink.Error + " Hosting by address only.";
+                _log("[CoopNet] " + LastError);
+                return;
+            }
+            _tunnel = new DatagramTunnel(relay);
+            _tunnel.StartHost(new IPEndPoint(IPAddress.Loopback, port));
+            _steamFriendsOnly = friendsOnly;
+            _steamAdvertised = true;
+            _log("[CoopNet] Host also reachable over Steam as " + SteamLink.MyId +
+                 (friendsOnly ? " (Steam friends only, nobody by address)" : ""));
+        }
+
+        /// <summary>Host: change who a running Steam session lets in. Players already in stay.</summary>
+        public void SetSteamFriendsOnly(bool friendsOnly)
+        {
+            if (Role != Role.Host || !OverSteam || _steamFriendsOnly == friendsOnly) return;
+            _steamFriendsOnly = friendsOnly;
+            SteamLink.SetFriendsOnly(friendsOnly);
+            _log("[CoopNet] Host admission: " + (friendsOnly ? "Steam friends only, nobody by address"
+                                                             : "anyone, over Steam and by address"));
+        }
+
         public void StartClient(string ip, int port)
         {
             Stop();
-            HostLabel = ip ?? "";
+            Connect(ip, port, ConnectAttempts, ip ?? "");
+        }
+
+        /// <summary>Join a host by its Steam id: LiteNetLib connects to a loopback tunnel in place of an address.</summary>
+        public void StartSteamClient(ulong hostSteamId)
+        {
+            Stop();
+            IDatagramRelay relay = hostSteamId == 0UL ? null : SteamLink.OpenClient(hostSteamId);
+            if (relay == null)
+            {
+                State = LinkState.Failed;
+                LastError = hostSteamId == 0UL ? "That is not a Steam ID" : SteamLink.Error;
+                _log("[CoopNet] " + LastError);
+                return;
+            }
+            _tunnel = new DatagramTunnel(relay);
+            int port = _tunnel.StartClient(hostSteamId);
+            string name = SteamLink.NameOf(hostSteamId);
+            Connect("127.0.0.1", port, Math.Max(ConnectAttempts, SteamConnectMs / Math.Max(100, ReconnectDelayMs)),
+                    string.IsNullOrEmpty(name) ? "Steam " + hostSteamId : name);
+        }
+
+        private void Connect(string ip, int port, int attempts, string label)
+        {
+            HostLabel = label;
             _net = NewManager();
+            _net.MaxConnectAttempts = Math.Max(1, attempts);
             if (!_net.Start())
             {
                 _net = null;
+                CloseTunnel();
                 State = LinkState.Failed;
                 LastError = "Failed to start the network manager";
                 _log("[CoopNet] " + LastError);
@@ -265,7 +342,7 @@ namespace FollowingSeasCoop.Net
             State = LinkState.Connecting;
             LastError = "";
             LastDisconnectReason = "";
-            _log("[CoopNet] Connecting to " + ip + ":" + port + " ...");
+            _log("[CoopNet] Connecting to " + (OverSteam ? label + " over Steam" : ip + ":" + port) + " ...");
             try { _net.Connect(ip, port, ConnKey); }   // Hello is sent once the peer connects
             catch (Exception e)
             {
@@ -274,6 +351,14 @@ namespace FollowingSeasCoop.Net
                 LastError = "Bad address '" + ip + "': " + e.Message;
                 _log("[CoopNet] " + LastError);
             }
+        }
+
+        private void CloseTunnel()
+        {
+            if (_tunnel == null) return;
+            _tunnel.Stop();
+            _tunnel = null;
+            SteamLink.CloseRelay();
         }
 
         /// <summary>Ends the session. The outcome fields (<see cref="LastError"/> and so on) are kept.</summary>
@@ -303,7 +388,17 @@ namespace FollowingSeasCoop.Net
                 }
                 else _net.Stop();
                 _net = null;
+                if (linger && _tunnel != null)
+                {
+                    // The repeated goodbye of a Steam session needs its tunnel as long as its manager.
+                    _closingTunnel = _tunnel;
+                    _tunnel = null;
+                    SteamLink.Advertise(false);
+                }
             }
+            CloseTunnel();
+            _steamFriendsOnly = false;
+            _steamAdvertised = false;
             _sessions.Clear();
             _held.Clear();
             _lastDue = 0;
@@ -325,6 +420,10 @@ namespace FollowingSeasCoop.Net
             if (_closing == null) return;
             try { _closing.Stop(); } catch { }
             _closing = null;
+            if (_closingTunnel == null) return;
+            try { _closingTunnel.Stop(); } catch { }
+            _closingTunnel = null;
+            SteamLink.CloseRelay();
         }
 
         private NetManager NewManager()
@@ -353,7 +452,9 @@ namespace FollowingSeasCoop.Net
                 try { _closing.PollEvents(); } catch { }
                 if (_closing != null && DateTime.UtcNow >= _closingUntil) FinishClosing();
             }
+            SteamLink.Tick();   // costs nothing unless Steam was started
             if (_net == null) return;
+            if (OverSteam && TickSteam()) return;
             _net.PollEvents();
             if (_net == null) return;   // a callback ended the session
             while (_held.Count > 0 && _held.Peek().Due <= Clock.LocalTick)
@@ -373,6 +474,37 @@ namespace FollowingSeasCoop.Net
                     _hostPeer.Send(new TimeSyncMsg { IsReply = false, ClientSendTick = now }, DeliveryMethod.Unreliable);
                 }
             }
+        }
+
+        /// <summary>What a session over Steam needs every frame. True when the session was ended here.</summary>
+        private bool TickSteam()
+        {
+            if (Role == Role.Host)
+            {
+                // A session nobody can join now is not offered to friends as one they can.
+                bool open = _sessions.Count < Math.Max(1, MaxClients);
+                if (open)
+                {
+                    try { open = JoinBlocker() == null; } catch { open = false; }
+                }
+                if (open != _steamAdvertised)
+                {
+                    _steamAdvertised = open;
+                    SteamLink.Advertise(open);
+                }
+                return false;
+            }
+            if (Role != Role.Client || State != LinkState.Connecting || !SteamLink.FailureIsFinal) return false;
+            // Steam already knows the host cannot answer; the remaining attempts would only make
+            // the player wait half a minute for the same message.
+            string failure = SteamLink.TakeFailure();
+            Stop();
+            State = LinkState.Failed;
+            LastError = string.IsNullOrEmpty(failure) ? "Steam could not reach the host" : failure;
+            LastDisconnectReason = LastError;
+            _log("[CoopNet] " + LastError);
+            OnLinkLost?.Invoke(LastError);
+            return true;
         }
 
         // -----------------------------------------------------------------
@@ -424,6 +556,18 @@ namespace FollowingSeasCoop.Net
         private void OnConnectionRequest(ConnectionRequest request)
         {
             if (Role != Role.Host) { request.Reject(); return; }
+            // Friends only: nobody is let in by address. A Steam player arrives from one of the
+            // tunnel's own loopback sockets, and Steam has already checked the friendship.
+            if (SteamFriendsOnly && !_tunnel.TryGetPeer(request.RemoteEndPoint, out _))
+            {
+                _log("[CoopNet] Refused " + request.RemoteEndPoint + ": Steam friends only");
+                request.Reject(Protocol.Write(new RejectMsg
+                {
+                    Reason = RejectReason.Unknown,
+                    Detail = "the host lets in Steam friends only; join over Steam",
+                }));
+                return;
+            }
             if (_sessions.Count >= Math.Max(1, MaxClients))
             {
                 request.Reject(Protocol.Write(new RejectMsg { Reason = RejectReason.SessionFull, Detail = "the session is full" }));
@@ -449,8 +593,11 @@ namespace FollowingSeasCoop.Net
             }
             else
             {
-                _sessions[peer.Id] = new PeerSession { Peer = peer };
-                _log("[CoopNet] Client connected (peer " + peer.Id + "), waiting for Hello");
+                var session = new PeerSession { Peer = peer };
+                if (OverSteam) _tunnel.TryGetPeer(new IPEndPoint(peer.Address, peer.Port), out session.SteamId);
+                _sessions[peer.Id] = session;
+                _log("[CoopNet] Client connected (peer " + peer.Id + (session.SteamId != 0UL ? ", Steam " + session.SteamId : "") +
+                     "), waiting for Hello");
             }
         }
 
@@ -489,6 +636,12 @@ namespace FollowingSeasCoop.Net
             {
                 end = LinkState.Rejected;
                 reason = "Rejected by the host (a different mod protocol?)";
+            }
+            // Steam knows why a host could not be reached; "The host did not answer" does not.
+            if (OverSteam && info.Reason == DisconnectReason.ConnectionFailed)
+            {
+                string failure = SteamLink.TakeFailure();
+                if (!string.IsNullOrEmpty(failure)) reason = failure;
             }
             _log("[CoopNet] Link to the host ended: " + reason);
             Stop();

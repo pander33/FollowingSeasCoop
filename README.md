@@ -1,4 +1,4 @@
-# ⛵ Following Seas Co-op
+# ⚓ Following Seas Co-op
 
 [![Version](https://img.shields.io/badge/version-0.1.0-blue)](DEVELOPMENT.md#history-of-changes)
 [![Game](https://img.shields.io/badge/game-Following%20Seas-1b2838?logo=steam&logoColor=white)](https://store.steampowered.com/app/2895440/)
@@ -21,7 +21,8 @@ Unofficial; not made or endorsed by Whipstaff Games.
 
 1. Every player installs the mod ([Install](#-install)).
 2. One player, the **host**, loads their world and opens it: **Esc → Co-op → Host this world**.
-3. The others, the **guests**, choose **Co-op** on the title screen and **Join**.
+3. The others, the **guests**, choose **Co-op** on the title screen and **Join**. Steam friends
+   need no address: the host's game is in their list.
 
 The world, the ship and the save are the host's. A guest brings nothing in and takes nothing out:
 no world or progress of their own in the session, and the mod never touches a guest's own saves.
@@ -43,7 +44,8 @@ Steps:
    unpack it into the game folder, so that `winhttp.dll` lies next to `Following Seas.exe`.
 3. **Start the game once and close it.** This makes BepInEx create its folders.
 4. **Unpack the mod's archive into the game folder.** You should now have
-   `BepInEx\plugins\FollowingSeasCoop\FollowingSeasCoop.dll` with `LiteNetLib.dll` beside it.
+   `BepInEx\plugins\FollowingSeasCoop\FollowingSeasCoop.dll` with three more `.dll` files beside
+   it. Keep them together.
 5. **Start the game.** The title screen has a new **Co-op** button: the mod works.
 
 To remove the mod, delete the folder `BepInEx\plugins\FollowingSeasCoop`.
@@ -56,9 +58,12 @@ To remove the mod, delete the folder `BepInEx\plugins\FollowingSeasCoop`.
 2. Press **Esc** and choose **Co-op**.
 3. If you like, change **Your name** and **Guests** — how many friends may join: three unless
    you change it, fifteen at most.
-4. Choose **Host this world**.
-5. The page now shows **Your address** with a **Copy** button, and who is aboard. Send the address
-   to your friends. On your home network that is all; for friends elsewhere see
+4. **Steam** says who may come through Steam: **Anyone** (your Steam friends see the game, and
+   anyone else can join by your Steam ID or your address), **Friends only** (your Steam friends
+   and nobody else), or **Off** (by address only).
+5. Choose **Host this world**.
+6. The page now shows who is aboard. Your Steam friends can join right away. For anyone else it
+   shows **Your address** with a **Copy** button, and **Copy ID** for your Steam ID: see
    [Over the internet](#-over-the-internet).
 
 Your game stops for a moment each time a guest loads the world. **Stop hosting** on the same page
@@ -67,20 +72,27 @@ ends the session: your guests go back to their title screen and your world stays
 ### 🚪 Guest
 
 1. **Stay on the title screen** — do not load a world of your own — and choose **Co-op**.
-2. A game hosted on your own network appears in the list by itself: choose **Join** in its row.
-   For any other game, type the address the host sent you into **Host address** and choose
-   **Join**.
+2. A Steam friend who hosts, and a game hosted on your own network, appear in the list by
+   themselves: choose **Join** in that row. For any other game, type what the host sent you —
+   an address or a Steam ID — into **Host address** and choose **Join**.
 3. The host's world loads and you come aboard their ship.
+
+A Steam friend's game can also be joined from Steam itself: right-click the friend in the friends
+list and choose **Join Game**, or accept their invite. The game goes to its title screen and
+joins by itself.
 
 **Leave the crew** (**Esc → Co-op**) takes you back to the title screen.
 
 ### 🌐 Over the internet
 
-Players in different homes need one of these two:
+Players in different homes need one of these:
 
-- **A virtual network** such as Hamachi, ZeroTier or Radmin VPN, the simpler way. Everybody joins
-  the same network in that program, and the guest types the address the host has *in that
-  program*.
+- **Steam**, the simplest way: nothing to set up. Steam must be running on both PCs, and the host
+  leaves **Steam** on **Anyone** or **Friends only**. Steam friends find the game in their Co-op
+  dialog. Someone who is not a friend joins by the host's Steam ID: the host chooses **Copy ID**
+  and sends it, the guest pastes it into **Host address**.
+- **A virtual network** such as Hamachi, ZeroTier or Radmin VPN. Everybody joins the same network
+  in that program, and the guest types the address the host has *in that program*.
 - **Port forwarding.** The host sets their router to forward **UDP port 7777** to their PC and
   gives the guests their public address (a search for "what is my IP" shows it).
 
@@ -133,6 +145,8 @@ the first start and can be edited in Notepad while the game is closed.
 | `Network / Port` | 7777 | The UDP port the host listens on. |
 | `Network / MaxClients` | 3 | How many guests the host accepts, from 1 to 15. |
 | `Network / AnnounceOnLan` | true | The host appears in the Co-op list of players on the same network. |
+| `Steam / Enabled` | true | Host and join through Steam as well as by address. |
+| `Steam / FriendsOnly` | false | A host over Steam lets in Steam friends only, and nobody by address. |
 | `UI / ShowStatus` | true | The small status line while a session runs. |
 
 Leave the `Dev` section alone: it is for developing the mod.
@@ -141,13 +155,17 @@ Leave the `Dev` section alone: it is for developing the mod.
 
 - **There is no Co-op button on the title screen.** BepInEx or the mod is not in the right place:
   check steps 2 and 4 of [Install](#-install).
-- **The host is not in the list.** The list only finds games on your own network. Type the host's
-  address instead.
+- **The host is not in the list.** The list shows Steam friends who host and games on your own
+  network. For any other, type the host's address or Steam ID instead.
+- **The dialog says Steam is not running.** Start Steam, then open the Co-op dialog again. The
+  Steam account has to own Following Seas. Without Steam the mod still works by address.
+- **A Steam friend is listed as "not hosting".** They have not chosen **Host this world** yet,
+  their session is full, or they host with **Steam** set to **Off**.
 - **Cannot connect.** Check, in this order:
   1. the host has loaded a world and chosen **Host this world**;
   2. everybody has the same version of the mod and of the game;
   3. Windows Firewall on the host's PC allowed the game (it asks the first time you host);
-  4. for friends elsewhere, the virtual network or the port forwarding from
+  4. for friends elsewhere, Steam, the virtual network or the port forwarding from
      [Over the internet](#-over-the-internet).
 - **A red line at the bottom of the screen.** The mod noticed a problem. You can usually keep
   playing; please report it.
@@ -165,5 +183,5 @@ How the mod is built, how it works and its history of changes are in
 
 ## 📄 License
 
-[MIT](LICENSE). The mod ships with LiteNetLib, also under MIT: see
-[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
+[MIT](LICENSE). The mod ships with LiteNetLib and Facepunch.Steamworks, also under MIT, and with
+Valve's `steam_api64.dll`: see [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).

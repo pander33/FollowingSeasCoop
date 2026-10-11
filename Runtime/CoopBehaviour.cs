@@ -46,6 +46,8 @@ namespace FollowingSeasCoop.Runtime
         {
             Instance = this;
             Protocol.Warn = message => Plugin.Log.LogWarning(message);
+            SteamLink.Log = message => Plugin.Log.LogInfo(message);
+            SteamLink.Warn = message => Plugin.Log.LogWarning(message);
 
             Net = new CoopNet(message => Plugin.Log.LogInfo(message))
             {
@@ -137,8 +139,13 @@ namespace FollowingSeasCoop.Runtime
             string blocker = HostBlocker();
             if (blocker != null) { Notice = blocker; return false; }
             ApplyConfig();
-            Net.StartHost(Plugin.Port.Value);
-            Notice = Net.IsHost ? "Hosting on port " + Plugin.Port.Value : Net.LastError;
+            bool steam = Plugin.SteamEnabled.Value;
+            if (steam) Net.StartSteamHost(Plugin.Port.Value, Plugin.SteamFriendsOnly.Value);
+            else Net.StartHost(Plugin.Port.Value);
+            // A host that asked for Steam and did not get it is up all the same, by address.
+            Notice = !Net.IsHost || steam != Net.OverSteam ? Net.LastError
+                : steam ? "Hosting over Steam and on port " + Plugin.Port.Value
+                : "Hosting on port " + Plugin.Port.Value;
             return Net.IsHost;
         }
 
@@ -149,6 +156,9 @@ namespace FollowingSeasCoop.Runtime
             if (blocker != null) { Notice = blocker; return false; }
             ApplyConfig();
             string host = string.IsNullOrWhiteSpace(address) ? Plugin.JoinIp.Value.Trim() : address.Trim();
+            // Seventeen digits are no address: it is the Steam ID a host copies from its Co-op page.
+            ulong steamId = SteamJoinLink.ParseId(host);
+            if (steamId != 0UL) return JoinSteam(steamId);
             int port = Plugin.Port.Value;
             // One colon only: more of them is an IPv6 address, not a port.
             int colon = host.LastIndexOf(':');
@@ -161,6 +171,115 @@ namespace FollowingSeasCoop.Runtime
             Net.StartClient(host, port);
             Notice = Net.IsClient ? "Connecting to " + Net.HostLabel + " ..." : Net.LastError;
             return Net.IsClient;
+        }
+
+        /// <summary>Joins a host through Steam, by its SteamID64.</summary>
+        public bool JoinSteam(ulong hostSteamId)
+        {
+            string blocker = JoinBlocker();
+            if (blocker != null) { Notice = blocker; return false; }
+            if (!SteamLink.EnsureReady()) { Notice = SteamLink.Error; return false; }
+            // Steam would carry the packets back to this copy, and the attempt would end in half a minute of nothing.
+            if (hostSteamId == SteamLink.MyId) { Notice = "That is your own Steam ID: ask the host for theirs"; return false; }
+            AdoptSteamName();
+            ApplyConfig();
+            Net.StartSteamClient(hostSteamId);
+            Notice = Net.IsClient ? "Connecting to " + Net.HostLabel + " over Steam ..." : Net.LastError;
+            if (Net.IsClient) _steamHost = hostSteamId;
+            return Net.IsClient;
+        }
+
+        // The Steam host of the last join that was started, to tell a repeated request from a new one.
+        private ulong _steamHost;
+
+        /// <summary>
+        /// Starts Steam if the player wants it and it is not started yet. Asked again whenever the
+        /// Co-op menu opens, so a player who started Steam after the game needs no restart.
+        /// </summary>
+        public bool SteamReady()
+        {
+            if (!Plugin.SteamEnabled.Value) return false;
+            if (SteamLink.Ready) return true;
+            if (!SteamLink.EnsureReady()) return false;
+            AdoptSteamName();
+            return true;
+        }
+
+        // A name the player never set is the Windows account's; the Steam name is the one friends know.
+        private static void AdoptSteamName()
+        {
+            string persona = (SteamLink.MyName ?? "").Trim();
+            if (persona.Length == 0 || Plugin.PlayerName.Value != (string)Plugin.PlayerName.DefaultValue) return;
+            Plugin.PlayerName.Value = persona.Length > Limits.Name ? persona.Substring(0, Limits.Name) : persona;
+        }
+
+        // "Join Game" on a friend in Steam, or an accepted invite. Steam gives the host's id to a
+        // running game through a callback, and to a game it starts on the command line.
+        private const float SteamStartDelay = 3f;      // the game's own start comes first
+        private const float SteamJoinPatience = 120f;  // how long a request waits for the title screen
+        private bool _steamStartChecked, _steamJoinTold;
+        private ulong _steamJoinHost;
+        private float _steamJoinSince;
+
+        private void TickSteamJoin()
+        {
+            float now = Time.realtimeSinceStartup;
+            if (!_steamStartChecked && now >= SteamStartDelay)
+            {
+                _steamStartChecked = true;
+                ulong launched = SteamJoinLink.Parse(Environment.GetCommandLineArgs());
+                if (launched != 0UL)
+                {
+                    Plugin.Log.LogInfo("[Coop] Started by Steam to join " + launched);
+                    _steamJoinHost = launched;
+                    _steamJoinSince = now;
+                }
+                // Steam hands a join request only to a game that talks to it, so it is started
+                // with the game and not with the first opening of the menu.
+                SteamReady();
+            }
+
+            ulong asked = SteamLink.TakeJoinRequest();
+            if (asked != 0UL)
+            {
+                _steamJoinHost = asked;
+                _steamJoinSince = now;
+                _steamJoinTold = false;
+            }
+            if (_steamJoinHost == 0UL) return;
+
+            if (Net.Role != Role.None)
+            {
+                ulong again = _steamJoinHost;
+                _steamJoinHost = 0UL;
+                // The same host again is a second click in Steam, or Steam repeating itself: nothing to say.
+                if (Net.IsClient && Net.OverSteam && again == _steamHost) return;
+                Flash(Net.IsHost ? "You are hosting: stop hosting before you join a friend through Steam"
+                                 : "You are in a crew: leave it before you join another through Steam");
+                return;
+            }
+            if (JoinBlocker() != null)
+            {
+                // A game Steam has just started is on its way to the title screen; a player in a
+                // world of their own has to go there, since a guest brings no world along.
+                if (GameAccess.InWorld && !_steamJoinTold)
+                {
+                    _steamJoinTold = true;
+                    Flash("To join your friend, go to the title screen");
+                }
+                if (now - _steamJoinSince > SteamJoinPatience)
+                {
+                    _steamJoinHost = 0UL;
+                    Notice = "The request to join through Steam has lapsed. Join from the Co-op menu.";
+                }
+                return;
+            }
+            ulong host = _steamJoinHost;
+            _steamJoinHost = 0UL;
+            Plugin.Log.LogInfo("[Coop] Joining " + host + " on a request from Steam");
+            // Said on screen as well: the dialog may not be there to say it (not found yet, or switched off).
+            if (!JoinSteam(host)) Flash(Notice);
+            CoopGameUI.ShowJoin(Notice);
         }
 
         public void Disconnect()
@@ -353,6 +472,11 @@ namespace FollowingSeasCoop.Runtime
                 CoopGameUI.TickPanel(this);
                 TickLanSearch();
                 Net.PollEvents();
+                try { TickSteamJoin(); }
+                catch (Exception e)
+                {
+                    if (_updateErrors++ < 20) Plugin.Log.LogError("[Coop] Steam join request failed: " + e);
+                }
                 try { TickDev(); }
                 catch (Exception e)
                 {
@@ -487,6 +611,8 @@ namespace FollowingSeasCoop.Runtime
         {
             try { LanSearch.Stop(); } catch { }
             try { Net.Stop("The game was closed"); Net.FinishClosing(); } catch { }
+            // After the session: Steam is given a moment to send the goodbye that is still queued.
+            SteamLink.Shutdown();
         }
 
         private void OnDestroy()

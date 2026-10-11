@@ -35,6 +35,8 @@ param(
     [switch]$NoAuto,
     # Do not show the Dev section of the menu.
     [switch]$NoTools,
+    # Leave Steam on. Off by default: both copies are one Steam account, which cannot join itself.
+    [switch]$Steam,
     [switch]$HostOnly
 )
 
@@ -48,6 +50,7 @@ function Get-Common {
               "--coop:Dev.DumpEverySeconds=$DumpEverySeconds")
     if ($Trace) { $list += '--coop:Dev.Trace=true' }
     if (-not $NoTools) { $list += '--coop:Dev.Tools=true' }
+    if (-not $Steam) { $list += '--coop:Steam.Enabled=false' }
     return $list
 }
 

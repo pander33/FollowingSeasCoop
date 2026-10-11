@@ -40,6 +40,10 @@
     <!-- Transport. Copied next to the plugin DLL (Private=true). -->
     <Reference Include="LiteNetLib"><HintPath>$(MSBuildProjectDirectory)\libs\LiteNetLib.dll</HintPath><Private>true</Private></Reference>
 
+    <!-- Steam transport: the managed wrapper, copied next to the plugin DLL. Its native half
+         (steam_api64.dll) is copied below; the game ships no Steam library of its own. -->
+    <Reference Include="Facepunch.Steamworks.Win64"><HintPath>$(MSBuildProjectDirectory)\libs\Facepunch.Steamworks.Win64.dll</HintPath><Private>true</Private></Reference>
+
     <!-- Game + Unity (do not copy: provided by the game). -->
     <Reference Include="Assembly-CSharp"><HintPath>$(ManagedDir)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Crest"><HintPath>$(ManagedDir)\Crest.dll</HintPath><Private>false</Private></Reference>
@@ -62,15 +66,22 @@
     <Reference Include="UnityEngine.ParticleSystemModule"><HintPath>$(ManagedDir)\UnityEngine.ParticleSystemModule.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Valve's binary (not MIT), from the Steamworks SDK. Kept in git so the project builds out of the box. -->
+    <None Include="libs\steam_api64.dll" Link="steam_api64.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
   <!--
     The netstandard2.0 LiteNetLib can drag BCL facade shims into the output. Unity Mono provides
     those at runtime; shipping them into BepInEx/plugins can cause assembly load conflicts.
-    Strip everything except our DLL and LiteNetLib after each build.
+    Strip everything except our DLL, LiteNetLib and the two Steam libraries after each build.
   -->
   <Target Name="StripFacades" AfterTargets="Build">
     <ItemGroup>
       <_Keep Include="$(OutputPath)FollowingSeasCoop.dll" />
       <_Keep Include="$(OutputPath)LiteNetLib.dll" />
+      <_Keep Include="$(OutputPath)Facepunch.Steamworks.Win64.dll" />
+      <_Keep Include="$(OutputPath)steam_api64.dll" />
       <_AllDlls Include="$(OutputPath)*.dll" />
       <_Strip Include="@(_AllDlls)" Exclude="@(_Keep)" />
     </ItemGroup>

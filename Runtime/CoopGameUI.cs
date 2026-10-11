@@ -68,6 +68,16 @@ namespace FollowingSeasCoop.Runtime
         private static readonly TextMeshProUGUI[] _foundTexts = new TextMeshProUGUI[FoundRows];
         private static readonly Button[] _foundJoins = new Button[FoundRows];
         private static LanHost[] _found = new LanHost[0];
+        // Steam: friends who are in the game (join dialog), and who a host lets in (host page).
+        private static TextMeshProUGUI _steamTitle;
+        private static readonly GameObject[] _friendRows = new GameObject[FoundRows];
+        private static readonly TextMeshProUGUI[] _friendTexts = new TextMeshProUGUI[FoundRows];
+        private static readonly Button[] _friendJoins = new Button[FoundRows];
+        private static readonly SteamFriendInfo[] NoFriends = new SteamFriendInfo[0];
+        private static SteamFriendInfo[] _friends = NoFriends;
+        private static float _friendsAt;
+        private static GameObject _steamRow;
+        private static Button _steamMode, _copyId;
 
         private static Place _place = Place.Closed;
         private static string _note = "";
@@ -409,10 +419,28 @@ namespace FollowingSeasCoop.Runtime
             Say(text);
         }
 
+        /// <summary>A join started outside the dialog ("Join Game" in Steam) is shown as the dialog's own.</summary>
+        public static void ShowJoin(string note)
+        {
+            if (Broken) return;
+            try
+            {
+                _userEnded = false;
+                _report = true;
+                if (_titleEntry == null) return;   // the title screen is not found yet; Watch reports a failure
+                if (_place != Place.Title) Show(Place.Title);
+                Say(CoopBehaviour.Instance.Net.IsClient ? "" : note);
+            }
+            catch (Exception e) { Fail(e); }
+        }
+
         private static void Show(Place place)
         {
             CoopBehaviour coop = CoopBehaviour.Instance;
             if (_canvas == null) Build(coop);
+            // Before the name is shown: a name never set becomes the Steam one.
+            coop.SteamReady();
+            _friendsAt = 0f;
             _place = place;
             _confirm = false;
             _note = "";
@@ -505,8 +533,44 @@ namespace FollowingSeasCoop.Runtime
             KeepName();
             Plugin.Port.Value = port;
             Plugin.MaxClients.Value = _slots;
-            Say(coop.Host() ? "" : coop.Notice);
+            // Steam asked for and not there: the world is hosted by address, and the player is told why.
+            bool hosted = coop.Host();
+            Say(hosted && coop.Net.OverSteam == Plugin.SteamEnabled.Value ? "" : coop.Notice);
             _lanAddress = LanAddress();
+        }
+
+        // A Steam friend who hosts: joined by the Steam id, with no address at all.
+        private static void JoinFriend(int row)
+        {
+            if (row >= _friends.Length) return;
+            CoopBehaviour coop = CoopBehaviour.Instance;
+            KeepName();
+            _userEnded = false;
+            _report = true;
+            Say(coop.JoinSteam(_friends[row].Id) ? "" : coop.Notice);
+        }
+
+        // Who may come through Steam. Before hosting: off, anyone, friends only. A session that
+        // runs over Steam can change between the last two; switching Steam off needs a new session.
+        private static void SteamMode()
+        {
+            CoopBehaviour coop = CoopBehaviour.Instance;
+            if (coop.Net.IsHost)
+            {
+                if (!coop.Net.OverSteam) return;
+                Plugin.SteamFriendsOnly.Value = !coop.Net.SteamFriendsOnly;
+                coop.Net.SetSteamFriendsOnly(Plugin.SteamFriendsOnly.Value);
+                _lanAddress = LanAddress();
+            }
+            else if (!Plugin.SteamEnabled.Value)
+            {
+                Plugin.SteamEnabled.Value = true;
+                Plugin.SteamFriendsOnly.Value = false;
+                coop.SteamReady();
+            }
+            else if (!Plugin.SteamFriendsOnly.Value) Plugin.SteamFriendsOnly.Value = true;
+            else Plugin.SteamEnabled.Value = Plugin.SteamFriendsOnly.Value = false;
+            Say("");
         }
 
         // A game found on the local network: its address goes into the field, as if typed.
@@ -584,7 +648,7 @@ namespace FollowingSeasCoop.Runtime
                     status = "Receiving the world... " + Mathf.RoundToInt(progress * 100f) + "%";
                 }
                 else if (net.State == LinkState.Connected) status = "Connected. The host is packing the world...";
-                else status = "Connecting to " + net.HostLabel + "...";
+                else status = "Connecting to " + Plain(net.HostLabel) + (net.OverSteam ? " over Steam..." : "...");
             }
             else if (hosting)
             {
@@ -605,13 +669,22 @@ namespace FollowingSeasCoop.Runtime
             _nameRow.SetActive(idle);
             _hostRow.SetActive(idle && title);
             Found(coop, idle && title, blocker == null);
+            Friends(idle && title, blocker == null);
             _slotsRow.SetActive(idle && !title);
             _portRow.SetActive(idle && !title);
             _slotsText.text = _slots.ToString();
             _minus.interactable = _slots > 1;
             _plus.interactable = _slots < Limits.RosterEntries - 1;
 
-            _addressRow.SetActive(hosting);
+            bool overSteam = hosting && net.OverSteam;
+            bool steamOn = hosting ? overSteam : Plugin.SteamEnabled.Value;
+            bool friendsOnly = hosting ? net.SteamFriendsOnly : steamOn && Plugin.SteamFriendsOnly.Value;
+            _steamRow.SetActive((idle && !title) || overSteam);
+            Caption(_steamMode, !steamOn ? "Off" : friendsOnly ? "Friends only" : "Anyone");
+            _copyId.gameObject.SetActive(overSteam);
+
+            // Friends only: nobody is let in by address, so none is offered.
+            _addressRow.SetActive(hosting && !friendsOnly);
             if (hosting) _address.text = _lanAddress.Length > 0 ? _lanAddress + ":" + Plugin.Port.Value : "port " + Plugin.Port.Value;
             _copy.gameObject.SetActive(hosting && _lanAddress.Length > 0);
 
@@ -642,11 +715,16 @@ namespace FollowingSeasCoop.Runtime
             Caption(_no, hosting ? "Keep hosting" : "Stay");
 
             _hint.text = title
-                ? (idle ? "A game on your network is listed by itself. For any other, the host finds the address under Esc, Co-op. You sail in the host's world; your own saves are not touched."
+                ? (idle ? "Steam friends who host, and games on your network, are listed by themselves. For any other, type the host's address or Steam ID. You sail in the host's world; your own saves are not touched."
                         : "")
-                : hosting ? "On another network a guest needs your public address, and UDP port " + Plugin.Port.Value + " forwarded to this PC."
+                : hosting ? (friendsOnly ? "Only your Steam friends can join: from their Co-op dialog, or with Join Game in the Steam friends list."
+                    : overSteam ? "Steam friends join from their Co-op dialog, or with Join Game in the Steam friends list. Anyone else needs your Steam ID."
+                    : "On another network a guest needs your public address, and UDP port " + Plugin.Port.Value + " forwarded to this PC.")
                 : session ? "Only the host saves the world."
-                : "Friends join from their title screen: Co-op, then your address.";
+                : !steamOn ? "Friends join from their title screen: Co-op, then your address."
+                : !SteamLink.Ready ? SteamLink.Error + " You can still host by address."
+                : friendsOnly ? "Only your Steam friends will be able to join, and nobody by address."
+                : "Steam friends will see your game in their Co-op dialog. Anyone else joins by your Steam ID or your address.";
             _hint.gameObject.SetActive(_hint.text.Length > 0);
 
             Arrange(title);
@@ -675,6 +753,34 @@ namespace FollowingSeasCoop.Runtime
                 _foundTexts[i].text = name + "   <alpha=#B0>" + found.Players + "/" + found.MaxPlayers + "   " +
                                       (why.Length > 0 ? why : found.Address) + "<alpha=#FF>";
                 _foundJoins[i].interactable = mayJoin && why.Length == 0;
+            }
+        }
+
+        // Steam friends who are in the game, the hosts first. One who does not host is listed too:
+        // that the friend is seen at all tells the player Steam is fine.
+        private static void Friends(bool shown, bool mayJoin)
+        {
+            shown = shown && Plugin.SteamEnabled.Value;
+            if (!shown) _friends = NoFriends;
+            else if (Time.unscaledTime >= _friendsAt)
+            {
+                _friendsAt = Time.unscaledTime + 1f;
+                _friends = SteamLink.FriendsInGame();
+            }
+            _steamTitle.gameObject.SetActive(shown);
+            if (shown)
+                _steamTitle.text = !SteamLink.Ready ? SteamLink.Error
+                    : _friends.Length == 0 ? "No Steam friends are in the game right now"
+                    : "Steam friends in the game";
+            for (int i = 0; i < FoundRows; i++)
+            {
+                bool used = i < _friends.Length;
+                _friendRows[i].SetActive(used);
+                if (!used) continue;
+                SteamFriendInfo friend = _friends[i];
+                string what = !friend.Hosting ? "not hosting" : friend.SameVersion ? "hosting" : "another mod version";
+                _friendTexts[i].text = (friend.Name.Length > 0 ? Plain(friend.Name) : "Friend") + "   <alpha=#B0>" + what + "<alpha=#FF>";
+                _friendJoins[i].interactable = mayJoin && friend.Hosting && friend.SameVersion;
             }
         }
 
@@ -741,7 +847,8 @@ namespace FollowingSeasCoop.Runtime
         {
             var all = new List<Selectable> { _name, _host };
             all.AddRange(_foundJoins);
-            all.AddRange(new Selectable[] { _port, _minus, _plus, _hostButton, _copy, _join, _back, _rescue, _end, _yes, _no });
+            all.AddRange(_friendJoins);
+            all.AddRange(new Selectable[] { _port, _minus, _plus, _copy, _steamMode, _copyId, _hostButton, _join, _back, _rescue, _end, _yes, _no });
             EventSystem events = EventSystem.current;
             GameObject selected = events != null ? events.currentSelectedGameObject : null;
             if (!title)
@@ -915,6 +1022,25 @@ namespace FollowingSeasCoop.Runtime
                 _foundRows[i] = found.gameObject;
             }
 
+            _steamTitle = Text(_window, "Steam", _bodyFont, 13f, Soft);
+            for (int i = 0; i < FoundRows; i++)
+            {
+                int row = i;
+                RectTransform friend = Node(_window, "Friend " + i);
+                var across = friend.gameObject.AddComponent<HorizontalLayoutGroup>();
+                across.spacing = 10f;
+                across.childAlignment = TextAnchor.MiddleLeft;
+                across.childControlWidth = across.childControlHeight = true;
+                across.childForceExpandWidth = across.childForceExpandHeight = false;
+                Size(friend.gameObject, -1f, 34f);
+                _friendTexts[i] = Text(friend, "Friend", _plainFont, 17f, Color.white);
+                _friendTexts[i].textWrappingMode = TextWrappingModes.NoWrap;
+                _friendTexts[i].overflowMode = TextOverflowModes.Ellipsis;
+                Size(_friendTexts[i].gameObject, -1f, -1f).flexibleWidth = 1f;
+                _friendJoins[i] = MakeButton(friend, "Join", () => JoinFriend(row), 90f);
+                _friendRows[i] = friend.gameObject;
+            }
+
             _slotsRow = Row(_window, "Guests");
             _minus = MakeButton(_slotsRow.transform, "-", () => Step(-1), 40f);
             _slotsText = Text(_slotsRow.transform, "Count", _plainFont, 20f, Color.white);
@@ -933,6 +1059,14 @@ namespace FollowingSeasCoop.Runtime
                 GUIUtility.systemCopyBuffer = _lanAddress + ":" + Plugin.Port.Value;
                 Say("Address copied");
             }, 90f);
+
+            _steamRow = Row(_window, "Steam");
+            _steamMode = MakeButton(_steamRow.transform, "Anyone", SteamMode, 150f);
+            _copyId = MakeButton(_steamRow.transform, "Copy ID", () =>
+            {
+                GUIUtility.systemCopyBuffer = SteamLink.MyId.ToString();
+                Say("Steam ID copied");
+            }, 100f);
 
             _crew = Text(_window, "Crew", _bodyFont, 16f, Color.white);
             _crew.lineSpacing = 12f;
