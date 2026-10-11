@@ -28,6 +28,7 @@ namespace FollowingSeasCoop.Runtime
         internal ItemRegistry Items { get; private set; }
         internal EconomySync Economy { get; private set; }
         internal TaskSync Tasks { get; private set; }
+        internal CargoSync Cargo { get; private set; }
 
         private Harmony _harmony;
         /// <summary>What the menu shows about the last thing that happened ("Connected", an error...).</summary>
@@ -54,6 +55,7 @@ namespace FollowingSeasCoop.Runtime
             Items = new ItemRegistry(Net);
             Economy = new EconomySync(Net);
             Tasks = new TaskSync(Net);
+            Cargo = new CargoSync(Net, Tasks);
             SceneManager.sceneUnloaded += Items.WorldUnloaded;
 
             Net.OnClientReady += HostOnClientReady;
@@ -79,6 +81,8 @@ namespace FollowingSeasCoop.Runtime
             PatchHealth.Install("Tools", () => ToolVisuals.Install(_harmony), log);
             // Without it a guest's own timer would eat from the shared stores a second time.
             PatchHealth.Install("Economy", () => EconomySync.Install(_harmony), log);
+            // Without it the hold is not shared: two cargo panels at once would lose a task's counts.
+            PatchHealth.Install("Cargo", () => CargoSync.Install(_harmony), log);
             Plugin.Log.LogInfo("Patches: " + PatchHealth.Details);
         }
 
@@ -155,7 +159,6 @@ namespace FollowingSeasCoop.Runtime
 
         private void HostOnClientReady(PeerSession session)
         {
-            Items.CaptureCargoKeys(session.PlayerNetId);
             if (!World.HostSend(session))
             {
                 Net.DisconnectPlayer(session.PlayerNetId, "The host could not send its world");
@@ -171,6 +174,7 @@ namespace FollowingSeasCoop.Runtime
             Players.Remove(netId);
             Items.RemovePlayer(netId);
             Economy.RemovePlayer(netId);
+            Cargo.RemovePlayer(netId);
             Notice = "A player left";
         }
 
@@ -204,6 +208,7 @@ namespace FollowingSeasCoop.Runtime
             Items.Clear();
             Economy.Clear();
             Tasks.Clear();
+            Cargo.Clear();
             InputBlock.Set(InputBlock.Reason.HostPause, false);
         }
 
@@ -238,6 +243,9 @@ namespace FollowingSeasCoop.Runtime
                         break;
                     case MsgType.TaskState: Tasks.OnTask((TaskStateMsg)msg, from); break;
                     case MsgType.JournalLine: Economy.OnJournal((JournalLineMsg)msg, from); break;
+                    case MsgType.CargoOps: Cargo.OnOps((CargoOpsMsg)msg, from); break;
+                    case MsgType.CargoState: Cargo.OnState((CargoStateMsg)msg); break;
+                    case MsgType.CargoLease: Cargo.OnLease((CargoLeaseMsg)msg, from); break;
                 }
             }
             catch (Exception e)
@@ -315,8 +323,15 @@ namespace FollowingSeasCoop.Runtime
                     {
                         if (_updateErrors++ < 20) Plugin.Log.LogError("[Economy] Tick failed: " + e);
                     }
+                    try { Cargo.Tick(); }
+                    catch (Exception e)
+                    {
+                        if (_updateErrors++ < 20) Plugin.Log.LogError("[Cargo] Tick failed: " + e);
+                    }
                     string carried = Items.PopNotice();
                     if (carried != null) Flash(carried);
+                    string loading = Cargo.PopNotice();
+                    if (loading != null) Flash(loading);
                     string rescued = Rescue.Tick();
                     if (rescued != null) Flash(rescued);
                     Players.TickLocal();

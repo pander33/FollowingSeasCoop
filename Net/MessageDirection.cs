@@ -21,6 +21,8 @@ namespace FollowingSeasCoop.Net
                 case MsgType.EconomyDelta:
                 case MsgType.TaskState:
                 case MsgType.JournalLine:
+                case MsgType.CargoOps:
+                case MsgType.CargoLease:
                 case MsgType.PlayerState:
                     return true;
                 default:
@@ -48,6 +50,9 @@ namespace FollowingSeasCoop.Net
                 case MsgType.ItemState:
                 case MsgType.ItemMotion:
                 case MsgType.EconomyState:
+                case MsgType.CargoOps:
+                case MsgType.CargoState:
+                case MsgType.CargoLease:
                 case MsgType.TaskState:
                 case MsgType.JournalLine:
                 case MsgType.PlayerState:

@@ -217,6 +217,14 @@ namespace FollowingSeasCoop.Sync
             Sent++;
         }
 
+        /// <summary>The local changes now, not at the next look.</summary>
+        public void Flush()
+        {
+            if (!Usable) return;
+            TaskPanelHandler panel = Panel();
+            if (panel != null && panel == _panel) Poll(panel);
+        }
+
         /// <summary>Host: a guest came into the world; contracts changed while it was loading.</summary>
         public void SendAll(uint player)
         {

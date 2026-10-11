@@ -31,6 +31,9 @@ namespace FollowingSeasCoop.Net
         EconomyDelta = 21,
         TaskState = 22,
         JournalLine = 23,
+        CargoOps = 24,
+        CargoState = 25,
+        CargoLease = 26,
     }
 
     public interface INetMessage

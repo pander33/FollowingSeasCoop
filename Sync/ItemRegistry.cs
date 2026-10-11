@@ -29,7 +29,6 @@ namespace FollowingSeasCoop.Sync
         private const float RequestAfter = 3f;
         private const float RequestRetry = 5f;
 
-        private static readonly FieldInfo CargoBoxesField = AccessTools.Field(typeof(ShipHullMover), "cargoBoxes");
         private static readonly FieldInfo FaunaField = AccessTools.Field(typeof(ObjectInteractionHandler), "isFauna");
         private static readonly FieldInfo TypeField = AccessTools.Field(typeof(ObjectInteractionHandler), "type");
 
@@ -41,15 +40,11 @@ namespace FollowingSeasCoop.Sync
         private readonly Dictionary<string, Component> _owners = new Dictionary<string, Component>(StringComparer.Ordinal);
         private readonly HashSet<Component> _duplicates = new HashSet<Component>();
         private readonly List<ItemStateMsg> _pending = new List<ItemStateMsg>();
-        private readonly Dictionary<uint, Dictionary<uint, string>> _cargoKeys =
-            new Dictionary<uint, Dictionary<uint, string>>();
         private uint _nextId = 1, _generation, _incomingGeneration;
-        private int _nextPart, _lateCargo;
+        private int _nextPart;
         private bool _complete, _active, _receiving, _warnedFields, _warnedOrder;
         private int _worldHandle;
         private float _scanAt, _requestAt;
-        // The ship whose cargo got its keys by save order. Crates that appear later get none.
-        private ShipHullMover _cargoShip;
 
         public ItemRegistry(CoopNet net) { _net = net; }
         public Entry Find(uint id) => _ids.TryGetValue(id, out Entry entry) ? entry : null;
@@ -59,10 +54,8 @@ namespace FollowingSeasCoop.Sync
         public void Clear()
         {
             _ids.Clear(); _keys.Clear(); _objects.Clear(); _owners.Clear(); _duplicates.Clear(); _pending.Clear();
-            _cargoKeys.Clear();
-            _nextId = 1; _nextPart = 0; _lateCargo = 0;
+            _nextId = 1; _nextPart = 0;
             _complete = false; _active = false; _receiving = false; _worldHandle = 0;
-            _cargoShip = null;
             ClearCarry();
         }
 
@@ -71,11 +64,7 @@ namespace FollowingSeasCoop.Sync
             if (scene.buildIndex == GameAccess.WorldScene) Clear();
         }
 
-        public void RemovePlayer(uint player)
-        {
-            _cargoKeys.Remove(player);
-            HostPlayerGone(player);
-        }
+        public void RemovePlayer(uint player) => HostPlayerGone(player);
 
         /// <summary>Every frame for a participant.</summary>
         public void Tick()
@@ -110,7 +99,7 @@ namespace FollowingSeasCoop.Sync
             return true;
         }
 
-        private static bool FieldsFound => CargoBoxesField != null && FaunaField != null && TypeField != null;
+        private static bool FieldsFound => FaunaField != null && TypeField != null;
 
         private void Scan()
         {
@@ -130,10 +119,9 @@ namespace FollowingSeasCoop.Sync
                     string key = ItemCatalog.KeyOf(item);
                     if (key != null) PortableStarted(item, key);
                 }
-            ScanCargo();
         }
 
-        // Destroyed objects: an unloaded island, a used-up barrel, a removed crate.
+        // Destroyed objects: an unloaded island, a used-up barrel.
         private void Forget()
         {
             foreach (Component obj in _objects.Keys.Where(obj => obj == null).ToArray()) _objects.Remove(obj);
@@ -141,74 +129,6 @@ namespace FollowingSeasCoop.Sync
                 _owners.Remove(key);
             _duplicates.RemoveWhere(obj => obj == null);
             ForgetCarry();
-        }
-
-        private static List<CargoPlacer> BoxesOf(ShipHullMover ship) =>
-            ship != null ? CargoBoxesField.GetValue(ship) as List<CargoPlacer> : null;
-
-        // Crates in the order the game saves them: by box, then by place among the box's children.
-        private static IEnumerable<KeyValuePair<int, CargoDefinition>> CargoOf(List<CargoPlacer> boxes)
-        {
-            for (int i = 0; i < boxes.Count; i++)
-            {
-                Transform parent = boxes[i] != null ? boxes[i].transform.parent : null;
-                if (parent == null) continue;
-                foreach (Transform child in parent)
-                {
-                    CargoDefinition cargo = child.GetComponent<CargoDefinition>();
-                    if (cargo != null) yield return new KeyValuePair<int, CargoDefinition>(i, cargo);
-                }
-            }
-        }
-
-        private void ScanCargo()
-        {
-            ShipHullMover ship = GameAccess.ActiveShip();
-            List<CargoPlacer> boxes = BoxesOf(ship);
-            if (boxes == null) return;
-            // The row number is an identity only for the cargo the world was loaded with: both
-            // copies built it from the same save. A row counted later would repeat a used key.
-            bool seed = _cargoShip != ship;
-            _cargoShip = ship;
-            int row = 0;
-            foreach (KeyValuePair<int, CargoDefinition> pair in CargoOf(boxes))
-            {
-                CargoDefinition cargo = pair.Value;
-                int index = row++;
-                if (_objects.ContainsKey(cargo) || _duplicates.Contains(cargo)) continue;
-                if (!seed)
-                {
-                    // Placed during the session: shared cargo actions are a later stage.
-                    _objects[cargo] = "cargo-late:" + _lateCargo++;
-                    continue;
-                }
-                Register(cargo, new ItemRecord
-                {
-                    Key = "cargo:" + ship.id + ":" + index, Kind = ItemKind.Cargo, ItemType = cargo.id,
-                    Name = cargo.name, TaskId = cargo.taskID, Box = pair.Key, Status = ItemStatus.Secured
-                });
-            }
-        }
-
-        public void CaptureCargoKeys(uint player)
-        {
-            if (!EnsureWorld()) return;
-            Scan();
-            var keys = new Dictionary<uint, string>();
-            ShipHullMover ship = GameAccess.ActiveShip();
-            List<CargoPlacer> boxes = FieldsFound ? BoxesOf(ship) : null;
-            if (boxes != null)
-            {
-                int row = 0;
-                foreach (KeyValuePair<int, CargoDefinition> pair in CargoOf(boxes))
-                {
-                    Entry entry = Find(pair.Value);
-                    if (entry != null && entry.Object == pair.Value)
-                        keys[entry.Record.NetId] = "cargo:" + ship.id + ":" + row;
-                    row++;
-                }
-            }
-            _cargoKeys[player] = keys;
         }
 
         public void PortableStarted(ObjectInteractionHandler item, string key)
@@ -280,22 +200,11 @@ namespace FollowingSeasCoop.Sync
         {
             if (!_net.IsHost || !EnsureWorld()) return;
             Scan();
-            _cargoKeys.TryGetValue(player, out Dictionary<uint, string> cargoKeys);
-            ItemRecord[] records = _ids.Values.Where(entry => entry.Record.Kind != ItemKind.Cargo ||
-                (cargoKeys != null && cargoKeys.ContainsKey(entry.Record.NetId)))
-                .OrderBy(entry => entry.Record.NetId).Select(entry =>
+            // Crates in the hold are not here: CargoSync names them by their place.
+            ItemRecord[] records = _ids.Values.OrderBy(entry => entry.Record.NetId).Select(entry =>
             {
                 if (entry.Object != null) Capture(entry.Record, entry.Object);
-                ItemRecord record = entry.Record;
-                if (record.Kind != ItemKind.Cargo) return record;
-                return new ItemRecord
-                {
-                    NetId = record.NetId, Key = cargoKeys[record.NetId], Kind = record.Kind,
-                    ItemType = record.ItemType, Name = record.Name, TaskId = record.TaskId, Box = record.Box,
-                    Revision = record.Revision, Status = record.Status, Holder = record.Holder,
-                    Leader = record.Leader, Flags = record.Flags, Pose = record.Pose,
-                    Prefab = record.Prefab, Amount = record.Amount
-                };
+                return entry.Record;
             }).ToArray();
             int parts = Math.Max(1, (records.Length + ItemManifestMsg.EntriesPerPart - 1) / ItemManifestMsg.EntriesPerPart);
             uint generation = ++_generation;
