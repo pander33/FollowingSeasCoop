@@ -12,6 +12,7 @@ What is used to find out why two copies of the game disagree. None of it is need
 | `Dev/LagMs` (in the plugin) | yes | Does it still work when messages take time to arrive? |
 | `Start-Pair.ps1` | yes | Two copies, a host and a guest, with one command. |
 | `DevConsole` | yes | Anything else: runs C# inside the game. Its own `README.md`. |
+| `Make-Release.ps1` | no | Checks the wire layer, builds and packs `dist\FollowingSeasCoop-<version>.zip` for players. |
 
 ## ProtocolSmoke
 

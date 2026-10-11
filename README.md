@@ -1,86 +1,169 @@
-# Following Seas Co-op
+# ⛵ Following Seas Co-op
 
-A co-op mod for [Following Seas](https://store.steampowered.com/app/2895440/). Early development
-(v0.1.0, protocol 12): a guest can join the host's world, the players see each other, the ship, the
-sea, the weather and the time of day are the host's, and the ship's controls, things, household,
-rowboat and crew are shared.
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](DEVELOPMENT.md#history-of-changes)
+[![Game](https://img.shields.io/badge/game-Following%20Seas-1b2838?logo=steam&logoColor=white)](https://store.steampowered.com/app/2895440/)
+[![BepInEx](https://img.shields.io/badge/BepInEx-5.4.23-orange)](https://github.com/BepInEx/BepInEx/releases)
+[![Players](https://img.shields.io/badge/players-2--16-brightgreen)](#-play)
+[![Status](https://img.shields.io/badge/status-early%20version-yellow)](#-what-you-share)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+Sail [Following Seas](https://store.steampowered.com/app/2895440/) together. One player opens
+their world, friends join it, and everybody is crew of the same ship.
 
 Unofficial; not made or endorsed by Whipstaff Games.
 
-## What is implemented
+> **This is an early version.**
+> **The host should back up their saves first**: paste
+> `%USERPROFILE%\AppData\LocalLow\WhipstaffGames\Following Seas` into the address bar of Explorer
+> and copy that folder somewhere safe.
 
-Written and built; only partly tried in game so far.
+## 🧭 In short
 
-- Host a loaded world, join it over LAN or a direct IP (UDP port 7777).
-- The guest receives the host's world and appears aboard the host's ship. The guest's own saves
-  are never written while it is in the host's world.
-- Players see each other on deck and ashore.
-- The guest's ship follows the host's; waves, wind, weather and time of day match.
-- Any player can steer, reef, work the sheets and braces, lay the kedge anchor, moor, pump, and use
+1. Every player installs the mod ([Install](#-install)).
+2. One player, the **host**, loads their world and opens it: **Esc → Co-op → Host this world**.
+3. The others, the **guests**, choose **Co-op** on the title screen and **Join**.
+
+The world, the ship and the save are the host's. A guest brings nothing in and takes nothing out:
+no world or progress of their own in the session, and the mod never touches a guest's own saves.
+
+## 📦 Install
+
+Every player needs:
+
+- Following Seas on Windows, **the same version of the game** for everybody;
+- **the same version of this mod** for everybody;
+- BepInEx 5, the free loader that runs mods for the game.
+
+Steps:
+
+1. **Find the game folder.** In Steam: right-click Following Seas → **Manage** →
+   **Browse local files**. It is the folder with `Following Seas.exe`.
+2. **Install BepInEx.** Download `BepInEx_win_x64_5.4.23.x.zip` from the
+   [BepInEx releases](https://github.com/BepInEx/BepInEx/releases) (version 5, x64 — not 6) and
+   unpack it into the game folder, so that `winhttp.dll` lies next to `Following Seas.exe`.
+3. **Start the game once and close it.** This makes BepInEx create its folders.
+4. **Unpack the mod's archive into the game folder.** You should now have
+   `BepInEx\plugins\FollowingSeasCoop\FollowingSeasCoop.dll` with `LiteNetLib.dll` beside it.
+5. **Start the game.** The title screen has a new **Co-op** button: the mod works.
+
+To remove the mod, delete the folder `BepInEx\plugins\FollowingSeasCoop`.
+
+## 🎮 Play
+
+### 🏠 Host
+
+1. Load your world as usual.
+2. Press **Esc** and choose **Co-op**.
+3. If you like, change **Your name** and **Guests** — how many friends may join: three unless
+   you change it, fifteen at most.
+4. Choose **Host this world**.
+5. The page now shows **Your address** with a **Copy** button, and who is aboard. Send the address
+   to your friends. On your home network that is all; for friends elsewhere see
+   [Over the internet](#-over-the-internet).
+
+Your game stops for a moment each time a guest loads the world. **Stop hosting** on the same page
+ends the session: your guests go back to their title screen and your world stays loaded.
+
+### 🚪 Guest
+
+1. **Stay on the title screen** — do not load a world of your own — and choose **Co-op**.
+2. A game hosted on your own network appears in the list by itself: choose **Join** in its row.
+   For any other game, type the address the host sent you into **Host address** and choose
+   **Join**.
+3. The host's world loads and you come aboard their ship.
+
+**Leave the crew** (**Esc → Co-op**) takes you back to the title screen.
+
+### 🌐 Over the internet
+
+Players in different homes need one of these two:
+
+- **A virtual network** such as Hamachi, ZeroTier or Radmin VPN, the simpler way. Everybody joins
+  the same network in that program, and the guest types the address the host has *in that
+  program*.
+- **Port forwarding.** The host sets their router to forward **UDP port 7777** to their PC and
+  gives the guests their public address (a search for "what is my IP" shows it).
+
+### 💾 Saving and playing again
+
+Only the host's game saves the world, the way it always does. To continue another day, the same
+host loads the same world and hosts again; the guests join again. If the host quits, the session
+ends for everybody.
+
+## 🤝 What you share
+
+- 🌊 The ship, the sea, the weather and the time of day are the same for everybody.
+- ☸️ Anyone can steer, reef, work the sheets and braces, drop the kedge anchor, moor, pump, and use
   winches, doors, lanterns and ballast.
-  One player at a time works a control; a second player sees who has it.
-- A drowned player is put back aboard instead of being offered a save to load, and the co-op menu
-  has **Return to the ship** for a player left behind in the water.
-- While the host has the game paused, guests cannot move.
-- One household for the crew: money, the ship's provisions, debts, the journal and accepted
-  contracts are shared; a delivery by any player pays the common purse once. Built, not tried in
-  game yet.
-- The tool a player has out (spyglass, compass, hammer, lantern and the rest) is seen by the
-  others. Built, not tried in game yet.
-- Barrels and sacks can be carried, put down and thrown by any player and are seen by the others;
-  one player at a time holds a thing. A thing put into the ship's hold is added to the shared
-  provisions. Built, not tried in game yet.
-- Leaks open and grow the same for everybody and any player can caulk them; the trolling lines'
-  weights and the fish on their hooks, the fish hold and the catch records are shared; a shot
-  animal lies dead for everybody and its yield can be carried by anyone. Built, not tried in game
-  yet.
-- Cargo crates are shared: any player can load, move, unload and deliver them, one player at a
-  time at the cargo panel; a second player sees who is loading. Built, not tried in game yet.
-- The rowboat: any player can launch and stow it; the player who is in it rows it and the others
-  see it move, with that player in it. Built, not tried in game yet.
-- The crew is one for everybody: a hand taken aboard or a crew changed at a dock by any player is
-  the same on every copy. A guest's orders in the crew panel (course, sails, pumps) are carried
-  out by the host's crew, and every player sees the crew walk and work, pumps included. Built,
-  not tried in game yet.
-- The reel of a trolling line and the length of a mooring line are shared. Built, not tried in
-  game yet.
+- 🛢️ Barrels and sacks can be carried, put down and thrown by anyone.
+- 💰 One purse and one set of ship's stores: money, provisions, debts, the journal and contracts
+  belong to the whole crew. A delivery by any player pays the common purse.
+- 📦 Cargo: anyone can load, move, unload and deliver crates.
+- 🔨 Leaks open and grow for everybody, and anyone can caulk them.
+- 🎣 Fishing with the trolling lines, the fish hold and the catch records.
+- 🦌 Hunting: a shot animal is dead for everybody, and anyone can carry what it yields.
+- 🚣 The rowboat: anyone can launch and stow it; whoever sits in it rows it.
+- 🧑‍✈️ The ship's crew: hands taken aboard are the same for everybody, and a guest's orders in the
+  crew panel are carried out.
 
-Not shared: living animals (only a shot one), a fish in another player's hand, another player's
-shot and the view through its spyglass.
+**Not shared:** living animals (each player sees their own until one is shot), a fish in another
+player's hand, another player's gunshot, and the view through another player's spyglass.
 
-## Install
+## 💡 Good to know
 
-1. Install [BepInEx 5.4.23 (x64)](https://github.com/BepInEx/BepInEx/releases) into the game folder
-   and start the game once.
-2. Put `FollowingSeasCoop.dll` and `LiteNetLib.dll` into `BepInEx/plugins/FollowingSeasCoop/`.
+- **One player at a time.** A wheel, a rope, a winch, a barrel or the cargo panel is used by one
+  player at a time. If someone else has it, a message names them, and you can take it when they
+  let go.
+- **A guest's Esc menu does not pause the game.** The world is the host's and sails on.
+- **When the host pauses**, guests cannot move and see a message saying so.
+- **If you drown**, you are put back on deck a few seconds later.
+- **Left behind in the water?** Press **Esc**, choose **Co-op**, then **Return to the ship**.
+- **Only the host can use the ship's Reset.**
+- Sails may twitch a little on a guest's screen. This is only how it looks.
 
-Everyone needs the same version of the mod and of the game.
+## ⚙️ Settings
 
-## Play
+Your name, the number of guests and the port are set on the Co-op page; you do not need a file
+for them. Everything is also in `BepInEx\config\com.followingseas.coop.cfg`, which appears after
+the first start and can be edited in Notepad while the game is closed.
 
-- **Host:** load your world, press **Esc**, choose **Co-op**, then **Host this world**. The page
-  then shows the address to give your friends (with **Copy**) and who is aboard. Your name, the
-  number of guests and the UDP port are set on the same page before hosting.
-- **Guest:** choose **Co-op** on the title screen. A game hosted on your network is listed there
-  by itself, with a **Join** of its own. For any other, type the host's address and choose
-  **Join**. An address may carry a port (`192.168.0.40:7777`); without one the configured port
-  is used.
-- The list asks every network adapter of the PC (a second network, a VPN adapter). A host does
-  not answer when `Network/AnnounceOnLan` is off in its settings.
-- On the same network the address shown to the host is enough. Over the internet the guest needs
-  the host's public address, and the host's router must forward the UDP port to the host's PC.
-- **Leave the crew** (Esc, Co-op) returns a guest to the title screen; **Stop hosting** keeps the
-  host's world loaded. Both ask once before they do it.
-- A guest's game does not pause under its Esc menu: the world is the host's.
-- **F8** opens the debug window (diagnostics, state dumps, trace, development tools).
+| Setting | At first | What it does |
+|---|---|---|
+| `Player / Name` | your Windows user name | The name other players see. |
+| `Network / Port` | 7777 | The UDP port the host listens on. |
+| `Network / MaxClients` | 3 | How many guests the host accepts, from 1 to 15. |
+| `Network / AnnounceOnLan` | true | The host appears in the Co-op list of players on the same network. |
+| `UI / ShowStatus` | true | The small status line while a session runs. |
 
-The host's game pauses while a guest loads.
+Leave the `Dev` section alone: it is for developing the mod.
 
-## Build
+## 🛟 If something goes wrong
 
-```bash
-dotnet build FollowingSeasCoop.csproj -c Release -p:GameDir="<game folder with BepInEx>"
-```
+- **There is no Co-op button on the title screen.** BepInEx or the mod is not in the right place:
+  check steps 2 and 4 of [Install](#-install).
+- **The host is not in the list.** The list only finds games on your own network. Type the host's
+  address instead.
+- **Cannot connect.** Check, in this order:
+  1. the host has loaded a world and chosen **Host this world**;
+  2. everybody has the same version of the mod and of the game;
+  3. Windows Firewall on the host's PC allowed the game (it asks the first time you host);
+  4. for friends elsewhere, the virtual network or the port forwarding from
+     [Over the internet](#-over-the-internet).
+- **A red line at the bottom of the screen.** The mod noticed a problem. You can usually keep
+  playing; please report it.
+- **Two players see different things** (a door, a barrel, the money). The guest leaves and joins
+  again: joining brings the host's whole world anew.
 
-Debugging tools (a protocol check that needs no game, a trace, a comparison of two copies, a
-script that starts a host and a guest side by side) are described in [`Tools/README.md`](Tools/README.md).
+**To report a problem**, send the file `BepInEx\LogOutput.log` from the game folder of the host
+and of the guest, and say what you were doing. **F8** opens a debug window; you only need it if
+you are asked for something from it.
+
+## 🛠️ For developers
+
+How the mod is built, how it works and its history of changes are in
+[`DEVELOPMENT.md`](DEVELOPMENT.md).
+
+## 📄 License
+
+[MIT](LICENSE). The mod ships with LiteNetLib, also under MIT: see
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
