@@ -17,6 +17,7 @@ namespace FollowingSeasCoop.Net
                 case MsgType.ClientWorldLoaded:
                 case MsgType.ControlRequest:
                 case MsgType.ItemAction:
+                case MsgType.ItemMotion:
                 case MsgType.PlayerState:
                     return true;
                 default:
@@ -42,6 +43,7 @@ namespace FollowingSeasCoop.Net
                 case MsgType.ControlState:
                 case MsgType.ItemManifest:
                 case MsgType.ItemState:
+                case MsgType.ItemMotion:
                 case MsgType.PlayerState:
                     return true;
                 default:

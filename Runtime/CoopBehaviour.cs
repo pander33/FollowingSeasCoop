@@ -69,6 +69,8 @@ namespace FollowingSeasCoop.Runtime
             // Without it: no rope trimming by looking at a rope, no door or lantern from a guest, no guest pumping.
             PatchHealth.Install("Controls", () => ControlsSync.Install(_harmony), log);
             PatchHealth.Install("Item catalog", () => ItemCatalog.Install(_harmony), log);
+            // Without it things are still told apart, but carrying one is not shown to the others.
+            PatchHealth.Install("Items", () => ItemRegistry.Install(_harmony), log);
             Plugin.Log.LogInfo("Patches: " + PatchHealth.Details);
         }
 
@@ -215,10 +217,8 @@ namespace FollowingSeasCoop.Runtime
                     case MsgType.ControlState: Controls.OnState((ControlStateMsg)msg); break;
                     case MsgType.ItemManifest: Items.OnManifest((ItemManifestMsg)msg); break;
                     case MsgType.ItemState: Items.OnState((ItemStateMsg)msg); break;
-                    case MsgType.ItemAction:
-                        if (Net.IsHost && ((ItemActionMsg)msg).Action == ItemActionKind.Manifest)
-                            Items.SendManifest(Net.PlayerNetIdForPeer(from));
-                        break;
+                    case MsgType.ItemAction: Items.OnAction((ItemActionMsg)msg, from); break;
+                    case MsgType.ItemMotion: Items.OnMotion((ItemMotionMsg)msg, from); break;
                 }
             }
             catch (Exception e)
@@ -288,6 +288,8 @@ namespace FollowingSeasCoop.Runtime
                     {
                         if (_updateErrors++ < 20) Plugin.Log.LogError("[Items] Tick failed: " + e);
                     }
+                    string carried = Items.PopNotice();
+                    if (carried != null) Flash(carried);
                     string rescued = Rescue.Tick();
                     if (rescued != null) Flash(rescued);
                     Players.TickLocal();
@@ -317,7 +319,12 @@ namespace FollowingSeasCoop.Runtime
 
         private void LateUpdate()
         {
-            try { Players.ApplyRemotes(); }
+            try
+            {
+                Players.ApplyRemotes();
+                // After the avatars and the ship: a carried thing is drawn against both.
+                if (Participating) Items.LateTick();
+            }
             catch (Exception e)
             {
                 if (_updateErrors++ < 20) Plugin.Log.LogError("[Coop] LateUpdate failed: " + e);

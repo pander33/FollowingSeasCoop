@@ -11,12 +11,18 @@ using UnityEngine.SceneManagement;
 
 namespace FollowingSeasCoop.Sync
 {
-    internal sealed class ItemRegistry
+    internal sealed partial class ItemRegistry
     {
         internal sealed class Entry
         {
             public ItemRecord Record;
             public Component Object;
+            // Where the thing is on a copy that does not move it itself.
+            public readonly ItemTrack Track = new ItemTrack();
+            // While this copy moves the thing: the pose of the last report, and the pose it last
+            // moved away from (a thing that stays within a centimetre of it is at rest).
+            public ItemPose Prev, Ref;
+            public float PrevTime, MovedAt;
         }
 
         /// <summary>A guest with no manifest asks for one this long after it entered the world.</summary>
@@ -57,6 +63,7 @@ namespace FollowingSeasCoop.Sync
             _nextId = 1; _nextPart = 0; _lateCargo = 0;
             _complete = false; _active = false; _receiving = false; _worldHandle = 0;
             _cargoShip = null;
+            ClearCarry();
         }
 
         public void WorldUnloaded(Scene scene)
@@ -64,7 +71,11 @@ namespace FollowingSeasCoop.Sync
             if (scene.buildIndex == GameAccess.WorldScene) Clear();
         }
 
-        public void RemovePlayer(uint player) => _cargoKeys.Remove(player);
+        public void RemovePlayer(uint player)
+        {
+            _cargoKeys.Remove(player);
+            HostPlayerGone(player);
+        }
 
         /// <summary>Every frame for a participant.</summary>
         public void Tick()
@@ -78,9 +89,11 @@ namespace FollowingSeasCoop.Sync
                 _requestAt = now + RequestRetry;
                 _net.SendToHost(new ItemActionMsg { Action = ItemActionKind.Manifest }, DeliveryMethod.ReliableOrdered);
             }
+            PollHands();
             if (now < _scanAt) return;
             _scanAt = now + 1f;
             Scan();
+            SpawnStandIns();
         }
 
         // Binds the registry to the loaded world; a new world starts an empty registry.
@@ -90,6 +103,7 @@ namespace FollowingSeasCoop.Sync
             int handle = SceneManager.GetSceneByBuildIndex(GameAccess.WorldScene).handle;
             if (_active && handle == _worldHandle) return true;
             Clear(); _active = true; _worldHandle = handle;
+            _worldSince = Time.unscaledTime;
             _requestAt = Time.unscaledTime + RequestAfter;
             _scanAt = Time.unscaledTime + 1f;
             Scan();
@@ -126,6 +140,7 @@ namespace FollowingSeasCoop.Sync
             foreach (string key in _owners.Where(pair => pair.Value == null).Select(pair => pair.Key).ToArray())
                 _owners.Remove(key);
             _duplicates.RemoveWhere(obj => obj == null);
+            ForgetCarry();
         }
 
         private static List<CargoPlacer> BoxesOf(ShipHullMover ship) =>
@@ -200,10 +215,14 @@ namespace FollowingSeasCoop.Sync
         {
             if (!_active || !FieldsFound || _objects.ContainsKey(item) || _duplicates.Contains(item) ||
                 (bool)FaunaField.GetValue(item)) return;
+            // Made while the game runs (the yield of a hunt): its path is not an identity, the next
+            // one made gets the same. It stays this copy's own.
+            if (item.name.EndsWith("(Clone)", StringComparison.Ordinal)) return;
             Register(item, new ItemRecord
             {
                 Key = key, Kind = ItemKind.Portable, Name = item.GetName(),
                 ItemType = TypeField.GetValue(item).ToString(),
+                Prefab = BaseName(item.name), Amount = AmountOf(item),
                 Status = item.isHeld ? ItemStatus.Held : ItemStatus.Free,
                 Holder = item.isHeld ? _net.MyNetId : 0
             });
@@ -213,8 +232,16 @@ namespace FollowingSeasCoop.Sync
         {
             if (_owners.TryGetValue(record.Key, out Component owner) && owner != null && owner != obj)
             {
-                // Two objects, one key: the first keeps the identity. Seen when an island is loaded
-                // again while a thing taken from it is still on the ship.
+                Entry taken = Find(record.Key);
+                if (taken != null && record.Kind == ItemKind.Portable &&
+                    ((taken.Record.Flags & ItemFlags.Touched) != 0 || taken.Record.Status == ItemStatus.Deleted))
+                {
+                    // An island loaded again brings back a thing that was carried away from it: the
+                    // carried one is the thing, this is its empty place.
+                    UnityEngine.Object.Destroy(obj.gameObject);
+                    return;
+                }
+                // Two objects, one key: the first keeps the identity.
                 _duplicates.Add(obj);
                 Plugin.Log.LogWarning("[Items] A second object has the key of '" + owner.name + "': " + record.Key);
                 return;
@@ -232,17 +259,21 @@ namespace FollowingSeasCoop.Sync
                 _net.Broadcast(new ItemStateMsg { Record = record }, DeliveryMethod.ReliableOrdered);
         }
 
-        private static void Capture(ItemRecord record, Component obj)
+        private void Capture(ItemRecord record, Component obj)
         {
+            // A settled thing is where its record says, to the last digit, on every copy.
+            if ((record.Flags & ItemFlags.Settled) != 0) return;
+            if (obj is ObjectInteractionHandler item) { record.Pose = PoseOf(item); return; }
             CoordSpace.LocalToReal(obj.transform.position, out record.Pose.X, out record.Pose.Y, out record.Pose.Z);
             Quaternion q = obj.transform.rotation;
             record.Pose.Qx = q.x; record.Pose.Qy = q.y; record.Pose.Qz = q.z; record.Pose.Qw = q.w;
         }
 
-        private static void Bind(Entry entry, Component obj)
+        private void Bind(Entry entry, Component obj)
         {
             entry.Object = obj;
-            if (entry.Record.Status == ItemStatus.Deleted) UnityEngine.Object.Destroy(obj.gameObject);
+            if (entry.Record.Status == ItemStatus.Deleted) { UnityEngine.Object.Destroy(obj.gameObject); return; }
+            if (obj is ObjectInteractionHandler item) Dress(entry.Record, item);
         }
 
         public void SendManifest(uint player)
@@ -262,7 +293,8 @@ namespace FollowingSeasCoop.Sync
                     NetId = record.NetId, Key = cargoKeys[record.NetId], Kind = record.Kind,
                     ItemType = record.ItemType, Name = record.Name, TaskId = record.TaskId, Box = record.Box,
                     Revision = record.Revision, Status = record.Status, Holder = record.Holder,
-                    Leader = record.Leader, Flags = record.Flags, Pose = record.Pose
+                    Leader = record.Leader, Flags = record.Flags, Pose = record.Pose,
+                    Prefab = record.Prefab, Amount = record.Amount
                 };
             }).ToArray();
             int parts = Math.Max(1, (records.Length + ItemManifestMsg.EntriesPerPart - 1) / ItemManifestMsg.EntriesPerPart);
@@ -282,6 +314,7 @@ namespace FollowingSeasCoop.Sync
             {
                 // Everything sent before a manifest is already in it.
                 _ids.Clear(); _keys.Clear(); _pending.Clear(); _complete = false;
+                _driven.Clear();
                 _incomingGeneration = msg.Generation; _nextPart = 0; _receiving = true;
             }
             if (!_receiving || msg.Generation != _incomingGeneration || msg.Part != _nextPart)
@@ -302,6 +335,7 @@ namespace FollowingSeasCoop.Sync
             foreach (ItemStateMsg state in _pending) Apply(state.Record);
             _pending.Clear();
             Plugin.Log.LogInfo("[Items] Manifest bound: " + Describe());
+            ReleaseStaleHolds();
         }
 
         public void OnState(ItemStateMsg msg)
@@ -317,8 +351,10 @@ namespace FollowingSeasCoop.Sync
             if (entry != null && entry.Record.Revision > record.Revision) return;
             if (entry == null) { entry = new Entry(); _ids.Add(record.NetId, entry); }
             else if (entry.Record.Key != record.Key && Find(entry.Record.Key) == entry) _keys.Remove(entry.Record.Key);
+            ItemRecord before = entry.Record;
             entry.Record = record; _keys[record.Key] = entry;
             if (_owners.TryGetValue(record.Key, out Component owner) && owner != null) Bind(entry, owner);
+            Changed(entry, before);
         }
 
         public string Describe()
@@ -331,7 +367,7 @@ namespace FollowingSeasCoop.Sync
             int duplicate = _duplicates.Count(obj => obj != null);
             return "bound " + bound + "   waiting " + (_ids.Count - bound - deleted) +
                    "   unmatched " + unmatched + "   duplicate " + duplicate + "   deleted " + deleted +
-                   (_net.IsClient && !_complete ? "   receiving manifest" : "");
+                   (_net.IsClient && !_complete ? "   receiving manifest" : "") + DescribeCarry();
         }
     }
 }

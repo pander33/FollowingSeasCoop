@@ -26,6 +26,7 @@ namespace FollowingSeasCoop.Net
         ItemManifest = 16,
         ItemAction = 17,
         ItemState = 18,
+        ItemMotion = 19,
     }
 
     public interface INetMessage
