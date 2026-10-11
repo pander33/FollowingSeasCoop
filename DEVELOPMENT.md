@@ -41,8 +41,7 @@ version and SHA256, kept in `dist\cache`, downloaded when missing) and `BepInEx\
 
 Releases are published at <https://github.com/pander33/FollowingSeasCoop/releases>.
 
-1. Build (0 errors, 0 warnings) and run `Tools/ProtocolSmoke`. The table of parts below says
-   "played" only for what was run in game.
+1. Build (0 errors, 0 warnings) and run `Tools/ProtocolSmoke`.
 2. Choose the number, `Major.Minor.Patch`. The handshake compares the wire protocol, not the mod
    version: the third digit is for fixes with the protocol unchanged, the second for features or
    a new protocol, the first stays 0 while the mod is an early version.
@@ -53,7 +52,7 @@ Releases are published at <https://github.com/pander33/FollowingSeasCoop/release
    that commit `vX.Y.Z` and push the tag. A published tag is never moved and a published library
    is never replaced: a mistake in the code is the next patch version.
 6. Release notes, in English: whether everyone must update (always when the protocol changed),
-   what is new, what has been played and what is only written, the two archives and for whom
+   what is new, what changed and what was fixed, the two archives and for whom
    each is, the game build, the SHA256 of both archives.
 7. `gh release create vX.Y.Z dist/FollowingSeasCoop-X.Y.Z.zip dist/FollowingSeasCoop-X.Y.Z-plugin-only.zip --title "Following Seas Co-op X.Y.Z" --notes-file <notes> --verify-tag`.
    Not a pre-release: the README links to `releases/latest`. Download both assets afterwards and
@@ -100,29 +99,26 @@ so it lines up on every copy whatever that copy's origin is.
 
 ## What is implemented, and how
 
-"Played" means run in game by the maintainer; everything else is written and builds, and has not
-been run yet.
-
-| Part | How | State |
-|---|---|---|
-| Session | Handshake with protocol check, roster, clock sync, up to `Network/MaxClients` guests. | played |
-| World | The host captures the game's save object with no file, sends it gzip-packed in chunks; the guest gives it to the game's loader. The host is paused while a guest loads. A guest never writes a save. | played |
-| Players | Pose 20 times a second, hull-local aboard, real space elsewhere; avatars are the game's crew models. | played |
-| Ship | The host sends the hull's pose and velocities; a guest's hull is kinematic and follows the buffered poses. | played |
-| Sea and sky | Weather type, wind, wave spectrum, ocean clock, date and time, four times a second. | played |
-| Controls | Wheel, reefs, rig ropes, winches, doors, lanterns, ballast, kedge anchor, mooring lines, pump — as state, not input. One hand at a time on what is held for a while. | played (the general case) |
-| Things | Barrels and sacks: a registry keyed by scene path; one mover at a time sends poses, the others draw it from a buffer; stand-ins where a copy lacks the object. | the registry played, carrying not |
-| Tools in hand | The active inventory slot and hammer blows; shown as a renderer-only copy of the local tool. | not played |
-| Household | Money, stores, debts, journal: polled, sent as numbered differences, the host's numbers win. | not played |
-| Contracts | Travel as the game's own save strings; the reward is counted on the delivering copy only. | not played |
-| Cargo | A crate is named by its box and its half-metre cell; one player at a time at the panel. | not played |
-| Leaks, trolling lines, fish hold, catch records | More control kinds and one more store; only the host rolls for leaks and bites. | not played |
-| Hunting | A shot animal and its harvest are told to all; living animals are each copy's own. | not played |
-| Rowboat | Launching is a control; in the water it is moved by the copy of the player in it. | not played |
-| Crew | A guest's orders are carried out by the host's crew; the looks and the roster are sent to guests. | not played |
-| Player menu | A Co-op button and page made of copies of the game's own buttons; LAN list of hosted games. | played |
-| Steam | A host is also reachable by its Steam id: Steam P2P datagrams tunnelled to LiteNetLib through loopback. Rich presence lists hosting friends in the join dialog and gives Steam's own Join Game and invites. Friends-only admission. | played (connecting) |
-| Rescue | A drowned player is put back on deck before the game's death dialog. | not played |
+| Part | How |
+|---|---|
+| Session | Handshake with protocol check, roster, clock sync, up to `Network/MaxClients` guests. |
+| World | The host captures the game's save object with no file, sends it gzip-packed in chunks; the guest gives it to the game's loader. The host is paused while a guest loads. A guest never writes a save. |
+| Players | Pose 20 times a second, hull-local aboard, real space elsewhere; avatars are the game's crew models. |
+| Ship | The host sends the hull's pose and velocities; a guest's hull is kinematic and follows the buffered poses. |
+| Sea and sky | Weather type, wind, wave spectrum, ocean clock, date and time, four times a second. |
+| Controls | Wheel, reefs, rig ropes, winches, doors, lanterns, ballast, kedge anchor, mooring lines, pump — as state, not input. One hand at a time on what is held for a while. |
+| Things | Barrels and sacks: a registry keyed by scene path; one mover at a time sends poses, the others draw it from a buffer; stand-ins where a copy lacks the object. |
+| Tools in hand | The active inventory slot and hammer blows; shown as a renderer-only copy of the local tool. |
+| Household | Money, stores, debts, journal: polled, sent as numbered differences, the host's numbers win. |
+| Contracts | Travel as the game's own save strings; the reward is counted on the delivering copy only. |
+| Cargo | A crate is named by its box and its half-metre cell; one player at a time at the panel. |
+| Leaks, trolling lines, fish hold, catch records | More control kinds and one more store; only the host rolls for leaks and bites. |
+| Hunting | A shot animal and its harvest are told to all; living animals are each copy's own. |
+| Rowboat | Launching is a control; in the water it is moved by the copy of the player in it. |
+| Crew | A guest's orders are carried out by the host's crew; the looks and the roster are sent to guests. |
+| Player menu | A Co-op button and page made of copies of the game's own buttons; LAN list of hosted games. |
+| Steam | A host is also reachable by its Steam id: Steam P2P datagrams tunnelled to LiteNetLib through loopback. Rich presence lists hosting friends in the join dialog and gives Steam's own Join Game and invites. Friends-only admission. |
+| Rescue | A drowned player is put back on deck before the game's death dialog. |
 
 Not shared: living animals, a fish in another player's hand, another player's shot, the view
 through another player's spyglass, another player's rowing animation. A guest cannot ask for the
