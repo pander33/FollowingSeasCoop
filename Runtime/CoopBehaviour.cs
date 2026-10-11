@@ -282,7 +282,12 @@ namespace FollowingSeasCoop.Runtime
                     // The sea before the players: a guest's wind and waves are the host's from this frame on.
                     if (Net.IsHost) Env.HostTick(); else Env.GuestTick();
                     Controls.Tick();
-                    Items.Tick();
+                    // On its own: a failure in the item registry must not take the players' frame with it.
+                    try { Items.Tick(); }
+                    catch (Exception e)
+                    {
+                        if (_updateErrors++ < 20) Plugin.Log.LogError("[Items] Tick failed: " + e);
+                    }
                     string rescued = Rescue.Tick();
                     if (rescued != null) Flash(rescued);
                     Players.TickLocal();
