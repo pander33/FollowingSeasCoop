@@ -79,7 +79,9 @@ crates, animals.
 **Dev section.** Each button does what the game itself would have done on this copy and never
 calls the synchronisation — the synchronisation is what is being tested:
 
-- *Open a leak*, *Widen leaks* (host only: a guest's leaks do not widen by themselves);
+- *Open a leak*, *Widen leaks* (host only: a guest's leaks do not widen by themselves),
+  *Mend a leak* (one blow of the hammer on the first open leak: one oakum, one step of strength;
+  with no strength or no oakum left the game closes the leak);
 - *Fish on a hook*, *Fish into the hold*;
 - *Go to an animal*, *Kill it* (the nearest living one that is loaded);
 - *Money +100*, *Oakum and food +5*;

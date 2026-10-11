@@ -314,6 +314,23 @@ namespace FollowingSeasCoop.Runtime
             return n == 0 ? "No leak is open" : "Widened " + n + " leak(s)";
         });
 
+        /// <summary>One blow of the caulking hammer on the first open leak: the game's own Repair.</summary>
+        public string DevMendLeak() => Dev(() =>
+        {
+            ShipHullMover ship = GameAccess.ActiveShip();
+            if (ship == null) return "There is no ship";
+            LeakController[] leaks = ship.GetComponentsInChildren<LeakController>(true);
+            for (int i = 0; i < leaks.Length; i++)
+            {
+                if (leaks[i] == null || !leaks[i].gameObject.activeSelf) continue;
+                // A blow takes one oakum and one step of strength; with no strength or no oakum left it closes the leak.
+                leaks[i].Repair();
+                return "Leak " + i + (leaks[i].gameObject.activeSelf ? " mended by a step" : " is closed") +
+                       ", oakum " + leaks[i].GetOakum().ToString("F0");
+            }
+            return "No leak is open";
+        });
+
         /// <summary>Puts a fish on the next free hook, the way a bite does.</summary>
         public string DevHookFish() => Dev(() =>
         {
@@ -709,6 +726,7 @@ namespace FollowingSeasCoop.Runtime
             GUI.enabled = GameAccess.InWorld && !Net.IsClient;
             if (GUILayout.Button("Widen leaks")) _devNotice = DevWidenLeaks();
             GUI.enabled = GameAccess.InWorld;
+            if (GUILayout.Button("Mend a leak")) _devNotice = DevMendLeak();
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
