@@ -29,6 +29,7 @@ namespace FollowingSeasCoop.Runtime
         internal EconomySync Economy { get; private set; }
         internal TaskSync Tasks { get; private set; }
         internal CargoSync Cargo { get; private set; }
+        internal HuntSync Hunt { get; private set; }
 
         private Harmony _harmony;
         /// <summary>What the menu shows about the last thing that happened ("Connected", an error...).</summary>
@@ -56,7 +57,9 @@ namespace FollowingSeasCoop.Runtime
             Economy = new EconomySync(Net);
             Tasks = new TaskSync(Net);
             Cargo = new CargoSync(Net, Tasks);
+            Hunt = new HuntSync(Net);
             SceneManager.sceneUnloaded += Items.WorldUnloaded;
+            SceneManager.sceneUnloaded += Hunt.WorldUnloaded;
 
             Net.OnClientReady += HostOnClientReady;
             Net.OnPlayerLeft += HostOnPlayerLeft;
@@ -83,6 +86,10 @@ namespace FollowingSeasCoop.Runtime
             PatchHealth.Install("Economy", () => EconomySync.Install(_harmony), log);
             // Without it the hold is not shared: two cargo panels at once would lose a task's counts.
             PatchHealth.Install("Cargo", () => CargoSync.Install(_harmony), log);
+            // Without it leaks and trolling lines are not shared: a guest's copy would roll its own.
+            PatchHealth.Install("Hull", () => ControlsSync.InstallHull(_harmony), log);
+            // Without it a shot animal and its yield stay on the hunter's copy.
+            PatchHealth.Install("Hunt", () => HuntSync.Install(_harmony), log);
             Plugin.Log.LogInfo("Patches: " + PatchHealth.Details);
         }
 
@@ -239,13 +246,19 @@ namespace FollowingSeasCoop.Runtime
                     case MsgType.EconomyDelta:
                         Economy.OnDelta((EconomyDeltaMsg)msg, from);
                         // A guest whose world was loaded again holds the contracts it joined with.
-                        if (((EconomyDeltaMsg)msg).Resync && Net.IsHost) Tasks.SendAll(Net.PlayerNetIdForPeer(from));
+                        if (((EconomyDeltaMsg)msg).Resync && Net.IsHost)
+                        {
+                            Tasks.SendAll(Net.PlayerNetIdForPeer(from));
+                            Hunt.SendAll(Net.PlayerNetIdForPeer(from));
+                        }
                         break;
                     case MsgType.TaskState: Tasks.OnTask((TaskStateMsg)msg, from); break;
                     case MsgType.JournalLine: Economy.OnJournal((JournalLineMsg)msg, from); break;
                     case MsgType.CargoOps: Cargo.OnOps((CargoOpsMsg)msg, from); break;
                     case MsgType.CargoState: Cargo.OnState((CargoStateMsg)msg); break;
                     case MsgType.CargoLease: Cargo.OnLease((CargoLeaseMsg)msg, from); break;
+                    case MsgType.AnimalState: Hunt.OnState((AnimalStateMsg)msg, from); break;
+                    case MsgType.FishRecord: Economy.OnRecord((FishRecordMsg)msg, from); break;
                 }
             }
             catch (Exception e)
@@ -269,6 +282,7 @@ namespace FollowingSeasCoop.Runtime
                 Items.SendManifest(netId);
                 Economy.SendAll(netId);
                 Tasks.SendAll(netId);
+                Hunt.SendAll(netId);
                 Notice = name + " joined";
                 Plugin.Log.LogInfo("[Coop] " + name + " is in the world");
             }
@@ -403,6 +417,7 @@ namespace FollowingSeasCoop.Runtime
         private void OnDestroy()
         {
             if (Items != null) SceneManager.sceneUnloaded -= Items.WorldUnloaded;
+            if (Hunt != null) SceneManager.sceneUnloaded -= Hunt.WorldUnloaded;
         }
     }
 }

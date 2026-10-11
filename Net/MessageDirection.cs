@@ -23,6 +23,8 @@ namespace FollowingSeasCoop.Net
                 case MsgType.JournalLine:
                 case MsgType.CargoOps:
                 case MsgType.CargoLease:
+                case MsgType.AnimalState:
+                case MsgType.FishRecord:
                 case MsgType.PlayerState:
                     return true;
                 default:
@@ -53,6 +55,8 @@ namespace FollowingSeasCoop.Net
                 case MsgType.CargoOps:
                 case MsgType.CargoState:
                 case MsgType.CargoLease:
+                case MsgType.AnimalState:
+                case MsgType.FishRecord:
                 case MsgType.TaskState:
                 case MsgType.JournalLine:
                 case MsgType.PlayerState:

@@ -54,17 +54,22 @@ namespace FollowingSeasCoop.Net
         public bool HasStores;
         public float[] Stores = new float[EconomyWire.Stores];
         public string[] Debts = Array.Empty<string>();
+        /// <summary>Fish in the ship's fish hold; false while the host's ship has none.</summary>
+        public bool HasFish;
+        public int Fish;
 
         public void Serialize(NetDataWriter w)
         {
             w.Put(Acked); w.Put(Money); w.Put(HasStores);
             EconomyWire.Put(w, Stores); EconomyWire.Put(w, Debts);
+            w.Put(HasFish); w.Put(Fish);
         }
 
         public void Deserialize(NetDataReader r)
         {
             Acked = r.GetUInt(); Money = r.GetFloat(); HasStores = r.GetBool();
             Stores = EconomyWire.GetStores(r); Debts = EconomyWire.GetLines(r);
+            HasFish = r.GetBool(); Fish = r.GetInt();
         }
     }
 
@@ -82,17 +87,19 @@ namespace FollowingSeasCoop.Net
         public string[] Debts = Array.Empty<string>();
         /// <summary>The guest's world was loaded again from the copy it joined with: it asks for everything anew.</summary>
         public bool Resync;
+        /// <summary>Fish put into the fish hold (or sold out of it, negative).</summary>
+        public int Fish;
 
         public void Serialize(NetDataWriter w)
         {
             w.Put(Seq); w.Put(Money); EconomyWire.Put(w, Stores);
-            w.Put(HasDebts); EconomyWire.Put(w, Debts); w.Put(Resync);
+            w.Put(HasDebts); EconomyWire.Put(w, Debts); w.Put(Resync); w.Put(Fish);
         }
 
         public void Deserialize(NetDataReader r)
         {
             Seq = r.GetUInt(); Money = r.GetFloat(); Stores = EconomyWire.GetStores(r);
-            HasDebts = r.GetBool(); Debts = EconomyWire.GetLines(r); Resync = r.GetBool();
+            HasDebts = r.GetBool(); Debts = EconomyWire.GetLines(r); Resync = r.GetBool(); Fish = r.GetInt();
         }
     }
 

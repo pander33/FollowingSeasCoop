@@ -164,6 +164,7 @@ namespace FollowingSeasCoop.Sync
             }
 
             Guard(BindDeck);
+            Guard(BindHull);
 
             Plugin.Log.LogInfo("[Controls] Bound to ship '" + ship.id + "': " + Counts());
             return true;
@@ -190,6 +191,7 @@ namespace FollowingSeasCoop.Sync
             _ropeDrivers = new int[0][];
             _reefDrivers = new IEnumerator[0];
             UnbindDeck();
+            UnbindHull();
         }
 
         // -----------------------------------------------------------------
@@ -207,6 +209,7 @@ namespace FollowingSeasCoop.Sync
             _nextScanAt = now + ScanInterval;
 
             if (_net.IsClient) SendPumped();
+            Guard(BindHooks);
             for (int i = 0; i < _all.Count; i++)
             {
                 Slot slot = _all[i];
@@ -438,7 +441,8 @@ namespace FollowingSeasCoop.Sync
         private static bool GuestSpeaksOnChange(ControlKind kind)
         {
             // Not lanterns: a guest's own oil store runs out by itself and would put the host's lights out.
-            return kind == ControlKind.Anchor || kind == ControlKind.Mooring;
+            return kind == ControlKind.Anchor || kind == ControlKind.Mooring ||
+                   kind == ControlKind.Leak || kind == ControlKind.TrollWeight || kind == ControlKind.FishPoint;
         }
 
         /// <summary>Kinds worked with a hand on them for a while: one player at a time.</summary>
@@ -699,7 +703,7 @@ namespace FollowingSeasCoop.Sync
         private string Counts()
         {
             return "steering " + (_steer != null ? "yes" : "no") + ", masts " + _reefs.Length + ", ropes " + _ropeSlots.Length +
-                   CountsDeck();
+                   CountsDeck() + CountsHull();
         }
 
         public string Describe()

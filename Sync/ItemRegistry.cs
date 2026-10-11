@@ -137,9 +137,11 @@ namespace FollowingSeasCoop.Sync
         {
             if (!_active || !FieldsFound || _objects.ContainsKey(item) || _duplicates.Contains(item) ||
                 (bool)FaunaField.GetValue(item)) return;
-            // Made while the game runs (the yield of a hunt): its path is not an identity, the next
-            // one made gets the same. It stays this copy's own.
-            if (item.name.EndsWith("(Clone)", StringComparison.Ordinal)) return;
+            // Made while the game runs: its path is not an identity, the next one made gets the same.
+            // The yield of a hunt is named after its animal; anything else stays this copy's own.
+            string yield = HuntSync.YieldKey(item);
+            if (yield != null) key = yield;
+            else if (item.name.EndsWith("(Clone)", StringComparison.Ordinal)) return;
             var record = new ItemRecord
             {
                 Key = key, Kind = ItemKind.Portable, Name = item.GetName(),
@@ -151,13 +153,21 @@ namespace FollowingSeasCoop.Sync
             // Carried off before this session began: a guest's world has it where its scene put it, so
             // it is shared from the start. This copy moves it like a thing just let go: a second
             // later it rests where it lies, or where it lands if it was in the air.
+            // The yield of a hunt is on no other copy at all.
             if (_net.IsHost && CarryFields && !item.isHeld &&
-                item.GetComponent<FixedJoint>() == null && ItemCatalog.MovedFromStart(item, MovedBefore))
+                item.GetComponent<FixedJoint>() == null && (yield != null || ItemCatalog.MovedFromStart(item, MovedBefore)))
             {
                 record.Flags |= ItemFlags.Touched;
                 if ((bool)PurchasedField.GetValue(item)) record.Flags |= ItemFlags.Purchased;
             }
             Register(item, record);
+            // A guest's yield: the host learns of it as of a thing taken up and let go at once, so
+            // the others see it lie there before anyone carries it.
+            if (yield != null && _net.IsClient && _complete && CarryReady && !item.isHeld && Find(key) == null)
+            {
+                Act(ItemActionKind.Take, item, key, null);
+                Act(ItemActionKind.Drop, item, key, null);
+            }
         }
 
         private void Register(Component obj, ItemRecord record)

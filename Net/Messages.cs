@@ -34,6 +34,8 @@ namespace FollowingSeasCoop.Net
         CargoOps = 24,
         CargoState = 25,
         CargoLease = 26,
+        AnimalState = 27,
+        FishRecord = 28,
     }
 
     public interface INetMessage
@@ -504,6 +506,12 @@ namespace FollowingSeasCoop.Net
         Water = 10,
         /// <summary>Client → host only, a command rather than a state: A = kilograms of water this player pumped out.</summary>
         Pump = 11,
+        /// <summary>A leak in the hull. Index = leak, A = 1 when open, B = how strong it is.</summary>
+        Leak = 12,
+        /// <summary>The weight of a trolling line. Index = weight, A = 1 when it is out.</summary>
+        TrollWeight = 13,
+        /// <summary>A hook of a trolling line. Index = hook, A = 1 with a fish on it, B = the fish's scale.</summary>
+        FishPoint = 14,
     }
 
     /// <summary>

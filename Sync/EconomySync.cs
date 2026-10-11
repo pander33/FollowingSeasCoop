@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using FollowingSeasCoop.Net;
 using FollowingSeasCoop.Runtime;
 using HarmonyLib;
@@ -34,6 +35,7 @@ namespace FollowingSeasCoop.Sync
             public float Money;
             public float[] Stores;
             public bool HasDebts;
+            public int Fish;
         }
 
         private readonly CoopNet _net;
@@ -51,6 +53,11 @@ namespace FollowingSeasCoop.Sync
         private uint _seq;
         private bool _synced;
         private ProvisionsController _controller;
+        // The ship's fish hold, counted like a store; the catch records as last seen, by kind of fish.
+        private FishCargoManager _fishHold;
+        private int _fish;
+        private bool _hasFish;
+        private readonly Dictionary<string, string> _records = new Dictionary<string, string>(StringComparer.Ordinal);
 
         public int Sent { get; private set; }
         public int Received { get; private set; }
@@ -64,6 +71,7 @@ namespace FollowingSeasCoop.Sync
         {
             _pending.Clear(); _acked.Clear();
             _dp = null; _hasStores = false; _seq = 0; _synced = false; _controller = null;
+            _fishHold = null; _hasFish = false; _fish = 0; _records.Clear();
             Sent = Received = 0;
             s_guest = false;
         }
@@ -97,6 +105,37 @@ namespace FollowingSeasCoop.Sync
             for (int i = 0; i < EconomyWire.Stores; i++) sum += stores[i];
             c.currentProvisions = sum;
         }
+
+        private static FishCargoManager FishHold()
+        {
+            ShipHullMover ship = GameAccess.ActiveShip();
+            return ship != null ? ship.GetComponent<FishCargoManager>() : null;
+        }
+
+        // The game can only add fish one by one, or count them all anew.
+        private static void WriteFish(FishCargoManager hold, int count)
+        {
+            if (hold.currentFishCount == count) return;
+            hold.RecalculateFish(count);
+            ShipHullMover ship = hold.GetComponent<ShipHullMover>();
+            if (ship != null) ship.UpdateCargoMass();
+        }
+
+        // The game writes a record as "id=weight" with the weight in the machine's own number
+        // format; on the wire the weight has a point.
+        private static bool ParseRecord(string line, out string id, out float weight)
+        {
+            id = null; weight = 0f;
+            int cut = line == null ? -1 : line.IndexOf('=');
+            if (cut <= 0) return false;
+            id = line.Substring(0, cut);
+            string text = line.Substring(cut + 1);
+            return float.TryParse(text, out weight) ||
+                   float.TryParse(text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out weight);
+        }
+
+        private static FishRecordMsg RecordMsg(string id, float weight) =>
+            new FishRecordMsg { Line = id + "=" + weight.ToString("R", CultureInfo.InvariantCulture) };
 
         private static string Join(List<string> lines) => lines == null ? "" : string.Join("\n", lines);
 
@@ -141,6 +180,14 @@ namespace FollowingSeasCoop.Sync
             if (c != null) Read(c, _stores);
             _debts = Join(data.debts);
             _logs = data.logs != null ? data.logs.Count : 0;
+            FishCargoManager hold = FishHold();
+            _hasFish = hold != null;
+            _fishHold = hold;
+            if (hold != null) _fish = hold.currentFishCount;
+            _records.Clear();
+            if (data.fishRecords != null)
+                foreach (string line in data.fishRecords)
+                    if (ParseRecord(line, out string id, out _)) _records[id] = line;
         }
 
         // Before anything from the wire is written: the local game's changes are taken first, so they
@@ -183,6 +230,19 @@ namespace FollowingSeasCoop.Sync
                     }
             }
 
+            FishCargoManager hold = FishHold();
+            if (hold != null)
+            {
+                int fish = hold.currentFishCount;
+                if (!_hasFish || hold != _fishHold)
+                {
+                    _fish = fish;
+                    changed |= _hasFish && _net.IsHost;
+                    _hasFish = true; _fishHold = hold;
+                }
+                if (fish != _fish) { delta.Fish = fish - _fish; _fish = fish; changed = true; }
+            }
+
             string debts = Join(data.debts);
             if (debts != _debts)
             {
@@ -203,10 +263,20 @@ namespace FollowingSeasCoop.Sync
                 }
             }
 
+            if (data.fishRecords != null)
+                foreach (string line in data.fishRecords)
+                {
+                    if (!ParseRecord(line, out string id, out float weight)) continue;
+                    if (_records.TryGetValue(id, out string known) && known == line) continue;
+                    _records[id] = line;
+                    if (_net.IsHost) _net.Broadcast(RecordMsg(id, weight), DeliveryMethod.ReliableOrdered);
+                    else _net.SendToHost(RecordMsg(id, weight), DeliveryMethod.ReliableOrdered);
+                }
+
             if (!changed) return;
             if (_net.IsHost) { SendState(); return; }
             delta.Seq = ++_seq;
-            _pending.Add(new Pending { Seq = delta.Seq, Money = delta.Money, Stores = delta.Stores, HasDebts = delta.HasDebts });
+            _pending.Add(new Pending { Seq = delta.Seq, Money = delta.Money, Stores = delta.Stores, HasDebts = delta.HasDebts, Fish = delta.Fish });
             _net.SendToHost(delta, DeliveryMethod.ReliableOrdered);
             Sent++;
         }
@@ -220,6 +290,7 @@ namespace FollowingSeasCoop.Sync
             _acked.TryGetValue(player, out uint acked);
             var msg = new EconomyStateMsg { Acked = acked, Money = _money, HasStores = _hasStores };
             Array.Copy(_stores, msg.Stores, _stores.Length);
+            msg.HasFish = _hasFish; msg.Fish = _fish;
             msg.Debts = _debts.Length == 0 ? Array.Empty<string>() : _debts.Split('\n');
             return msg;
         }
@@ -239,6 +310,10 @@ namespace FollowingSeasCoop.Sync
             if (!_net.IsHost || dp == null || dp.gameData == null) return;
             Look(dp);
             _net.SendTo(player, State(player), DeliveryMethod.ReliableOrdered);
+            if (dp.gameData.fishRecords == null) return;
+            foreach (string line in dp.gameData.fishRecords)
+                if (ParseRecord(line, out string id, out float weight))
+                    _net.SendTo(player, RecordMsg(id, weight), DeliveryMethod.ReliableOrdered);
         }
 
         public void OnDelta(EconomyDeltaMsg msg, NetPeer from)
@@ -260,6 +335,12 @@ namespace FollowingSeasCoop.Sync
             {
                 for (int i = 0; i < _stores.Length; i++) _stores[i] = Mathf.Max(0f, _stores[i] + msg.Stores[i]);
                 Write(c, _stores);
+            }
+            FishCargoManager hold = FishHold();
+            if (hold != null && _hasFish && msg.Fish != 0)
+            {
+                _fish = Math.Max(0, _fish + msg.Fish);
+                WriteFish(hold, _fish);
             }
             if (msg.HasDebts)
             {
@@ -290,11 +371,13 @@ namespace FollowingSeasCoop.Sync
             var stores = new float[EconomyWire.Stores];
             Array.Copy(msg.Stores, stores, stores.Length);
             bool ownDebts = false;
+            int fish = msg.Fish;
             foreach (Pending p in _pending)
             {
                 money += p.Money;
                 for (int i = 0; i < stores.Length; i++) stores[i] = Mathf.Max(0f, stores[i] + p.Stores[i]);
                 ownDebts |= p.HasDebts;
+                fish = Math.Max(0, fish + p.Fish);
             }
 
             GameData data = dp.gameData;
@@ -308,6 +391,12 @@ namespace FollowingSeasCoop.Sync
                 Write(c, stores);
                 Array.Copy(stores, _stores, stores.Length);
                 _hasStores = true;
+            }
+            FishCargoManager hold = FishHold();
+            if (hold != null && msg.HasFish)
+            {
+                WriteFish(hold, fish);
+                _fish = fish; _hasFish = true; _fishHold = hold;
             }
             if (!ownDebts)
             {
@@ -329,6 +418,30 @@ namespace FollowingSeasCoop.Sync
             Look(dp);
             dp.gameData.logs.Add(msg.Line);
             _logs = dp.gameData.logs.Count;
+            if (_net.IsHost)
+                _net.Broadcast(msg, DeliveryMethod.ReliableOrdered, readyOnly: true, exceptNetId: _net.PlayerNetIdForPeer(from));
+        }
+
+        // -----------------------------------------------------------------
+        // Fish records
+        // -----------------------------------------------------------------
+
+        public void OnRecord(FishRecordMsg msg, NetPeer from)
+        {
+            DataPersistenceManager dp = GameAccess.Dp;
+            if (dp == null || dp.gameData == null) return;
+            if (!ParseRecord(msg.Line, out string id, out float weight)) return;
+            // The local records first, so this one is not sent back as a local one.
+            Look(dp);
+            GameData data = dp.gameData;
+            if (data.fishRecords == null) data.fishRecords = new List<string>();
+            // As the game writes it, so the game on this machine can read it back.
+            string line = id + "=" + weight;
+            // The game itself replaces the line of a kind whenever it calls a catch a record, with
+            // a lighter one too: the latest line is the record.
+            int at = data.fishRecords.FindIndex(known => ParseRecord(known, out string knownId, out _) && knownId == id);
+            if (at < 0) data.fishRecords.Add(line); else data.fishRecords[at] = line;
+            _records[id] = line;
             if (_net.IsHost)
                 _net.Broadcast(msg, DeliveryMethod.ReliableOrdered, readyOnly: true, exceptNetId: _net.PlayerNetIdForPeer(from));
         }

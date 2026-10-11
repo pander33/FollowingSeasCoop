@@ -731,10 +731,12 @@ namespace FollowingSeasCoop.Sync
                             if (!models.ContainsKey(name) || _standIns.Contains(models[name])) models[name] = model;
                         }
                 }
-                if (!models.TryGetValue(r.Prefab, out ObjectInteractionHandler like)) continue;
+                // The yield of a hunt has no like thing lying about: it is made from what the animal leaves.
+                GameObject source = models.TryGetValue(r.Prefab, out ObjectInteractionHandler like) ? like.gameObject : HuntSync.YieldPrefab(r.Prefab);
+                if (source == null) continue;
                 if (!Enum.TryParse(r.ItemType, out ProvisionsController.ProvisionType type)) continue;
 
-                GameObject made = UnityEngine.Object.Instantiate(like.gameObject);
+                GameObject made = UnityEngine.Object.Instantiate(source);
                 made.name = r.Prefab;
                 SceneManager.MoveGameObjectToScene(made, SceneManager.GetSceneByBuildIndex(GameAccess.WorldScene));
                 foreach (FixedJoint joint in made.GetComponents<FixedJoint>()) UnityEngine.Object.Destroy(joint);

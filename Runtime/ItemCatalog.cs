@@ -73,7 +73,7 @@ namespace FollowingSeasCoop.Runtime
         }
 
         // Same-name ordinal at every level, including roots. Escape delimiters in Unity names.
-        private static string SceneKey(Transform transform)
+        internal static string SceneKey(Transform transform)
         {
             var parts = new List<string>();
             for (Transform t = transform; t != null; t = t.parent)

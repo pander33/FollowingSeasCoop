@@ -137,7 +137,7 @@ namespace FollowingSeasCoop.Sync
                 case ControlKind.Ballast: return _ballast;
                 case ControlKind.Anchor: return _anchor;
                 case ControlKind.Water: return _water;
-                default: return null;
+                default: return FindHull(kind, index);
             }
         }
 
@@ -182,7 +182,7 @@ namespace FollowingSeasCoop.Sync
                 case ControlKind.Water:
                     reading.A = HullMass;
                     return reading.A > 0f;
-                default: return false;
+                default: return ReadHull(slot, ref reading);
             }
         }
 
@@ -211,7 +211,7 @@ namespace FollowingSeasCoop.Sync
                 case ControlKind.Water:
                     return Mathf.Abs(reading.A - slot.A) > 1f;
                 default:
-                    return false;
+                    return DiffersHull(slot, reading);
             }
         }
 
@@ -237,7 +237,7 @@ namespace FollowingSeasCoop.Sync
                 case ControlKind.Water:
                     if (slot.A > 0f) HullMass = slot.A;
                     return true;
-                default: return true;
+                default: return ApplyHull(slot);
             }
         }
 
