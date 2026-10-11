@@ -1,7 +1,7 @@
 # Following Seas Co-op
 
 A co-op mod for [Following Seas](https://store.steampowered.com/app/2895440/). Early development
-(v0.1.0, protocol 6): a guest can join the host's world, the players see each other, the ship, the
+(v0.1.0, protocol 7): a guest can join the host's world, the players see each other, the ship, the
 sea, the weather and the time of day are the host's, and the ship's controls are
 shared. **Leaks, provisions, the rowboat, cargo, crew orders and money are not shared yet.**
 
@@ -22,6 +22,8 @@ Written and built; only partly tried in game so far.
 - A drowned player is put back aboard instead of being offered a save to load, and the co-op menu
   has **Return to the ship** for a player left behind in the water.
 - While the host has the game paused, guests cannot move.
+- The tool a player has out (spyglass, compass, hammer, lantern and the rest) is seen by the
+  others. Built, not tried in game yet.
 - Barrels and sacks can be carried, put down and thrown by any player and are seen by the others;
   one player at a time holds a thing. A thing put into the ship's hold is added to the host's
   provisions. Built, not tried in game yet. Cargo crates are told apart (F8 → Debug, `Items`) but

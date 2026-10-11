@@ -71,6 +71,8 @@ namespace FollowingSeasCoop.Runtime
             PatchHealth.Install("Item catalog", () => ItemCatalog.Install(_harmony), log);
             // Without it things are still told apart, but carrying one is not shown to the others.
             PatchHealth.Install("Items", () => ItemRegistry.Install(_harmony), log);
+            // Without it a tool is still shown in the other player's hand, but not its blows.
+            PatchHealth.Install("Tools", () => ToolVisuals.Install(_harmony), log);
             Plugin.Log.LogInfo("Patches: " + PatchHealth.Details);
         }
 

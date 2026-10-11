@@ -14,7 +14,7 @@ namespace FollowingSeasCoop.Net
     public static class Protocol
     {
         /// <summary>Wire protocol version. Increment on any breaking format change.</summary>
-        public const int Version = 6;
+        public const int Version = 7;
 
         /// <summary>Where the net layer reports a dropped packet. Set by the runtime layer.</summary>
         public static Action<string> Warn = _ => { };

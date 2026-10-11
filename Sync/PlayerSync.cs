@@ -28,6 +28,10 @@ namespace FollowingSeasCoop.Sync
             public Vector3 LastWorld;
             public bool HasLastWorld;
             public float Speed;
+            public bool Crouching;
+            public byte Tool, ToolUse;
+            public long ToolTick;
+            public readonly ToolVisuals Tools = new ToolVisuals();
         }
 
         private readonly CoopNet _net;
@@ -114,6 +118,10 @@ namespace FollowingSeasCoop.Sync
             if (player.state == PlayerHandler.MovementState.crouching) state.Flags |= PlayerFlags.Crouching;
             if (player.state == PlayerHandler.MovementState.swimming) state.Flags |= PlayerFlags.Swimming;
 
+            state.Tool = ToolVisuals.LocalKind();
+            state.ToolUse = ToolVisuals.LocalUseCount;
+            ToolVisuals.Measure(player, feet, onShip ? ship.transform.up : Vector3.up);
+
             msg = state;
             return true;
         }
@@ -155,6 +163,14 @@ namespace FollowingSeasCoop.Sync
                 remote.HasFrame = true;
                 remote.HasLastWorld = false;
             }
+            // Poses are interpolated; these are taken as they are, so a late packet must not bring an old tool back.
+            if (msg.Tick >= remote.ToolTick)
+            {
+                remote.ToolTick = msg.Tick;
+                remote.Crouching = (msg.Flags & PlayerFlags.Crouching) != 0;
+                remote.Tool = msg.Tool;
+                remote.ToolUse = msg.ToolUse;
+            }
             remote.Pose.InterpDelayMs = Plugin.InterpDelayMs.Value;
             remote.Pose.Push(msg.Tick, msg.X, msg.Y, msg.Z, msg.Yaw, msg.Pitch, msg.Vx, msg.Vy, msg.Vz);
         }
@@ -174,7 +190,7 @@ namespace FollowingSeasCoop.Sync
             foreach (Remote remote in _remotes.Values)
             {
                 if (!_net.HasMember(remote.NetId)) { _gone.Add(remote.NetId); continue; }
-                if (!remote.Pose.Sample(serverNow, out double x, out double y, out double z, out float yaw, out _)) continue;
+                if (!remote.Pose.Sample(serverNow, out double x, out double y, out double z, out float yaw, out float pitch)) continue;
                 if (remote.OnShip && ship == null)
                 {
                     if (remote.Avatar != null && remote.Avatar.activeSelf) remote.Avatar.SetActive(false);
@@ -198,6 +214,8 @@ namespace FollowingSeasCoop.Sync
                 }
                 remote.Avatar.transform.SetPositionAndRotation(world, rotation);
                 Animate(remote, ship);
+                // After the body: the tool hangs at its eye.
+                remote.Tools.Apply(remote.Avatar, pitch, remote.Crouching, remote.Tool, remote.ToolUse);
             }
             foreach (uint netId in _gone) Remove(netId);
         }

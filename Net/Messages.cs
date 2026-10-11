@@ -346,6 +346,10 @@ namespace FollowingSeasCoop.Net
         /// <summary>Look pitch, degrees, positive down.</summary>
         public float Pitch;
         public float Vx, Vy, Vz;
+        /// <summary>The tool in hand: its slot in the game's inventory plus one, 0 for none.</summary>
+        public byte Tool;
+        /// <summary>Grows by one each time the tool is used (a blow of the caulking hammer).</summary>
+        public byte ToolUse;
 
         public void Serialize(NetDataWriter w)
         {
@@ -356,6 +360,7 @@ namespace FollowingSeasCoop.Net
             w.Put(Yaw);
             w.Put(Pitch);
             w.Put(Vx); w.Put(Vy); w.Put(Vz);
+            w.Put(Tool); w.Put(ToolUse);
         }
 
         public void Deserialize(NetDataReader r)
@@ -367,6 +372,7 @@ namespace FollowingSeasCoop.Net
             Yaw = r.GetFloat();
             Pitch = r.GetFloat();
             Vx = r.GetFloat(); Vy = r.GetFloat(); Vz = r.GetFloat();
+            Tool = r.GetByte(); ToolUse = r.GetByte();
         }
     }
 
