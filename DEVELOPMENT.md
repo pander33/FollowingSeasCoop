@@ -37,7 +37,27 @@ unpacked into the game folder. The complete one adds the BepInEx archive as publ
 version and SHA256, kept in `dist\cache`, downloaded when missing) and `BepInEx\licenses\` from
 `Tools/ReleaseNotices`. The version is read from `Plugin.cs` and must be the built library's.
 
-To publish: commit, run the script, tag `v<version>` on that commit, and attach both archives.
+### Releasing a version
+
+Releases are published at <https://github.com/pander33/FollowingSeasCoop/releases>.
+
+1. Build (0 errors, 0 warnings) and run `Tools/ProtocolSmoke`. The table of parts below says
+   "played" only for what was run in game.
+2. Choose the number, `Major.Minor.Patch`. The handshake compares the wire protocol, not the mod
+   version: the third digit is for fixes with the protocol unchanged, the second for features or
+   a new protocol, the first stays 0 while the mod is an early version.
+3. Write the number into `Plugin.cs`, `<Version>` of the `.csproj`, `README.md` (the badge and the
+   archive names) and this file (the line at the top, a new section in the history of changes).
+4. `Tools\Make-Release.ps1`, and read the list of files it prints for each archive.
+5. Commit and push; if anything that is packed changed after step 4, run the script again. Tag
+   that commit `vX.Y.Z` and push the tag. A published tag is never moved and a published library
+   is never replaced: a mistake in the code is the next patch version.
+6. Release notes, in English: whether everyone must update (always when the protocol changed),
+   what is new, what has been played and what is only written, the two archives and for whom
+   each is, the game build, the SHA256 of both archives.
+7. `gh release create vX.Y.Z dist/FollowingSeasCoop-X.Y.Z.zip dist/FollowingSeasCoop-X.Y.Z-plugin-only.zip --title "Following Seas Co-op X.Y.Z" --notes-file <notes> --verify-tag`.
+   Not a pre-release: the README links to `releases/latest`. Download both assets afterwards and
+   compare their SHA256 with the notes.
 
 There is no automated test of the game logic: it is verified in game. The wire layer has a check
 that needs no game, `Tools/ProtocolSmoke`. The debugging tools — the trace, the comparison of two

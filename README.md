@@ -1,6 +1,6 @@
 # ⚓ Following Seas Co-op
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](DEVELOPMENT.md#history-of-changes)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/pander33/FollowingSeasCoop/releases/latest)
 [![Game](https://img.shields.io/badge/game-Following%20Seas-1b2838?logo=steam&logoColor=white)](https://store.steampowered.com/app/2895440/)
 [![BepInEx](https://img.shields.io/badge/BepInEx-5.4.23.5-orange)](https://github.com/BepInEx/BepInEx/releases)
 [![Players](https://img.shields.io/badge/players-2--16-brightgreen)](#-play)
@@ -32,7 +32,9 @@ no world or progress of their own in the session, and the mod never touches a gu
 Every player needs Following Seas on Windows, **the same version of the game** and **the same
 version of this mod**.
 
-The mod runs on BepInEx 5, a free loader for game mods. A release has two archives:
+The mod runs on BepInEx 5, a free loader for game mods. Download it from the
+[latest release](https://github.com/pander33/FollowingSeasCoop/releases/latest), which has two
+archives:
 
 | Archive | For whom |
 |---|---|
@@ -183,8 +185,10 @@ Leave the `Dev` section alone: it is for developing the mod.
 - **Two players see different things** (a door, a barrel, the money). The guest leaves and joins
   again: joining brings the host's whole world anew.
 
-**To report a problem**, send the file `BepInEx\LogOutput.log` from the game folder of the host
-and of the guest, and say what you were doing. **F8** opens a debug window; you only need it if
+**To report a problem**, open an
+[issue](https://github.com/pander33/FollowingSeasCoop/issues), attach the file
+`BepInEx\LogOutput.log` from the game folder of the host and of the guest, and say what you were
+doing. **F8** opens a debug window; you only need it if
 you are asked for something from it.
 
 ## 🛠️ For developers
