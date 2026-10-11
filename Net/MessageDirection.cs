@@ -18,6 +18,9 @@ namespace FollowingSeasCoop.Net
                 case MsgType.ControlRequest:
                 case MsgType.ItemAction:
                 case MsgType.ItemMotion:
+                case MsgType.EconomyDelta:
+                case MsgType.TaskState:
+                case MsgType.JournalLine:
                 case MsgType.PlayerState:
                     return true;
                 default:
@@ -44,6 +47,9 @@ namespace FollowingSeasCoop.Net
                 case MsgType.ItemManifest:
                 case MsgType.ItemState:
                 case MsgType.ItemMotion:
+                case MsgType.EconomyState:
+                case MsgType.TaskState:
+                case MsgType.JournalLine:
                 case MsgType.PlayerState:
                     return true;
                 default:

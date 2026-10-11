@@ -14,7 +14,7 @@ namespace FollowingSeasCoop.Net
     public static class Protocol
     {
         /// <summary>Wire protocol version. Increment on any breaking format change.</summary>
-        public const int Version = 7;
+        public const int Version = 8;
 
         /// <summary>Where the net layer reports a dropped packet. Set by the runtime layer.</summary>
         public static Action<string> Warn = _ => { };
@@ -85,6 +85,10 @@ namespace FollowingSeasCoop.Net
                 case MsgType.ItemAction: return new ItemActionMsg();
                 case MsgType.ItemState: return new ItemStateMsg();
                 case MsgType.ItemMotion: return new ItemMotionMsg();
+                case MsgType.EconomyState: return new EconomyStateMsg();
+                case MsgType.EconomyDelta: return new EconomyDeltaMsg();
+                case MsgType.TaskState: return new TaskStateMsg();
+                case MsgType.JournalLine: return new JournalLineMsg();
                 // New message bodies are registered here as they land.
                 default: return null;
             }

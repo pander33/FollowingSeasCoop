@@ -238,6 +238,8 @@ namespace FollowingSeasCoop.Runtime
                 GUILayout.Label("Sea and sky: " + Env.Describe());
                 GUILayout.Label("Controls: " + Controls.Describe());
                 GUILayout.Label("Items: " + Items.Describe());
+                GUILayout.Label("Household: " + Economy.Describe());
+                GUILayout.Label("Tasks: " + Tasks.Describe());
                 if (Rescue.Rescues > 0) GUILayout.Label("Pulled back aboard: " + Rescue.Rescues);
             }
         }

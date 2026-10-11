@@ -27,6 +27,10 @@ namespace FollowingSeasCoop.Net
         ItemAction = 17,
         ItemState = 18,
         ItemMotion = 19,
+        EconomyState = 20,
+        EconomyDelta = 21,
+        TaskState = 22,
+        JournalLine = 23,
     }
 
     public interface INetMessage

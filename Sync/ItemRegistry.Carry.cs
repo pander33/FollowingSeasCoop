@@ -400,8 +400,6 @@ namespace FollowingSeasCoop.Sync
                 case ItemActionKind.Delete:
                     if (r.Status == ItemStatus.Deleted) return;
                     r.Status = ItemStatus.Deleted; r.Holder = 0;
-                    // The guest's copy of the hold took it; the world that is saved is this one.
-                    if (player != _net.MyNetId) HostStore(msg);
                     break;
                 default:
                     return;
@@ -422,13 +420,6 @@ namespace FollowingSeasCoop.Sync
             Changed(entry, moverBefore);
         }
 
-        private static void HostStore(ItemActionMsg msg)
-        {
-            ShipHullMover ship = GameAccess.ActiveShip();
-            if (ship == null || ship.provisionController == null || msg.Amount <= 0f) return;
-            if (!Enum.TryParse(msg.ItemType, out ProvisionsController.ProvisionType type)) return;
-            ship.provisionController.AddProvisions(msg.Amount, type);
-        }
 
         // A player left: what it held or had let go is nobody's now.
         private void HostPlayerGone(uint player)

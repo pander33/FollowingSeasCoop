@@ -26,6 +26,8 @@ namespace FollowingSeasCoop.Runtime
         internal ControlsSync Controls { get; private set; }
         internal PlayerRescue Rescue { get; private set; }
         internal ItemRegistry Items { get; private set; }
+        internal EconomySync Economy { get; private set; }
+        internal TaskSync Tasks { get; private set; }
 
         private Harmony _harmony;
         /// <summary>What the menu shows about the last thing that happened ("Connected", an error...).</summary>
@@ -50,6 +52,8 @@ namespace FollowingSeasCoop.Runtime
             Controls = new ControlsSync(Net);
             Rescue = new PlayerRescue();
             Items = new ItemRegistry(Net);
+            Economy = new EconomySync(Net);
+            Tasks = new TaskSync(Net);
             SceneManager.sceneUnloaded += Items.WorldUnloaded;
 
             Net.OnClientReady += HostOnClientReady;
@@ -73,6 +77,8 @@ namespace FollowingSeasCoop.Runtime
             PatchHealth.Install("Items", () => ItemRegistry.Install(_harmony), log);
             // Without it a tool is still shown in the other player's hand, but not its blows.
             PatchHealth.Install("Tools", () => ToolVisuals.Install(_harmony), log);
+            // Without it a guest's own timer would eat from the shared stores a second time.
+            PatchHealth.Install("Economy", () => EconomySync.Install(_harmony), log);
             Plugin.Log.LogInfo("Patches: " + PatchHealth.Details);
         }
 
@@ -164,6 +170,7 @@ namespace FollowingSeasCoop.Runtime
             Pause.End(netId);
             Players.Remove(netId);
             Items.RemovePlayer(netId);
+            Economy.RemovePlayer(netId);
             Notice = "A player left";
         }
 
@@ -195,6 +202,8 @@ namespace FollowingSeasCoop.Runtime
             Controls.Clear();
             Rescue.Clear();
             Items.Clear();
+            Economy.Clear();
+            Tasks.Clear();
             InputBlock.Set(InputBlock.Reason.HostPause, false);
         }
 
@@ -221,6 +230,14 @@ namespace FollowingSeasCoop.Runtime
                     case MsgType.ItemState: Items.OnState((ItemStateMsg)msg); break;
                     case MsgType.ItemAction: Items.OnAction((ItemActionMsg)msg, from); break;
                     case MsgType.ItemMotion: Items.OnMotion((ItemMotionMsg)msg, from); break;
+                    case MsgType.EconomyState: Economy.OnState((EconomyStateMsg)msg); break;
+                    case MsgType.EconomyDelta:
+                        Economy.OnDelta((EconomyDeltaMsg)msg, from);
+                        // A guest whose world was loaded again holds the contracts it joined with.
+                        if (((EconomyDeltaMsg)msg).Resync && Net.IsHost) Tasks.SendAll(Net.PlayerNetIdForPeer(from));
+                        break;
+                    case MsgType.TaskState: Tasks.OnTask((TaskStateMsg)msg, from); break;
+                    case MsgType.JournalLine: Economy.OnJournal((JournalLineMsg)msg, from); break;
                 }
             }
             catch (Exception e)
@@ -242,6 +259,8 @@ namespace FollowingSeasCoop.Runtime
                 // The world it loaded is a few seconds old and holds no wheel angle at all.
                 Controls.MarkAllDirty();
                 Items.SendManifest(netId);
+                Economy.SendAll(netId);
+                Tasks.SendAll(netId);
                 Notice = name + " joined";
                 Plugin.Log.LogInfo("[Coop] " + name + " is in the world");
             }
@@ -289,6 +308,12 @@ namespace FollowingSeasCoop.Runtime
                     catch (Exception e)
                     {
                         if (_updateErrors++ < 20) Plugin.Log.LogError("[Items] Tick failed: " + e);
+                    }
+                    // On their own, like the items: a failure in the household must not stop the players.
+                    try { Economy.Tick(); Tasks.Tick(); }
+                    catch (Exception e)
+                    {
+                        if (_updateErrors++ < 20) Plugin.Log.LogError("[Economy] Tick failed: " + e);
                     }
                     string carried = Items.PopNotice();
                     if (carried != null) Flash(carried);
