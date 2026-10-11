@@ -2,7 +2,7 @@
 
 [![Version](https://img.shields.io/badge/version-0.1.0-blue)](DEVELOPMENT.md#history-of-changes)
 [![Game](https://img.shields.io/badge/game-Following%20Seas-1b2838?logo=steam&logoColor=white)](https://store.steampowered.com/app/2895440/)
-[![BepInEx](https://img.shields.io/badge/BepInEx-5.4.23-orange)](https://github.com/BepInEx/BepInEx/releases)
+[![BepInEx](https://img.shields.io/badge/BepInEx-5.4.23.5-orange)](https://github.com/BepInEx/BepInEx/releases)
 [![Players](https://img.shields.io/badge/players-2--16-brightgreen)](#-play)
 [![Status](https://img.shields.io/badge/status-early%20version-yellow)](#-what-you-share)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -12,7 +12,8 @@ their world, friends join it, and everybody is crew of the same ship.
 
 Unofficial; not made or endorsed by Whipstaff Games.
 
-> **This is an early version.**
+> **This is an early version.** Not every part has been played by a full crew yet, and playing
+> through Steam is the newest of them: if it fails, join by address.
 > **The host should back up their saves first**: paste
 > `%USERPROFILE%\AppData\LocalLow\WhipstaffGames\Following Seas` into the address bar of Explorer
 > and copy that folder somewhere safe.
@@ -29,26 +30,36 @@ no world or progress of their own in the session, and the mod never touches a gu
 
 ## 📦 Install
 
-Every player needs:
+Every player needs Following Seas on Windows, **the same version of the game** and **the same
+version of this mod**.
 
-- Following Seas on Windows, **the same version of the game** for everybody;
-- **the same version of this mod** for everybody;
-- BepInEx 5, the free loader that runs mods for the game.
+The mod runs on BepInEx 5, a free loader for game mods. A release has two archives:
+
+| Archive | For whom |
+|---|---|
+| `FollowingSeasCoop-0.1.0.zip` | **Most players.** The mod with BepInEx 5.4.23.5 inside: nothing else to download. |
+| `FollowingSeasCoop-0.1.0-plugin-only.zip` | A game that already has BepInEx 5, version 5.4.23.5 or newer. |
 
 Steps:
 
-1. **Find the game folder.** In Steam: right-click Following Seas → **Manage** →
+1. **Close the game and find its folder.** In Steam: right-click Following Seas → **Manage** →
    **Browse local files**. It is the folder with `Following Seas.exe`.
-2. **Install BepInEx.** Download `BepInEx_win_x64_5.4.23.x.zip` from the
-   [BepInEx releases](https://github.com/BepInEx/BepInEx/releases) (version 5, x64 — not 6) and
-   unpack it into the game folder, so that `winhttp.dll` lies next to `Following Seas.exe`.
-3. **Start the game once and close it.** This makes BepInEx create its folders.
-4. **Unpack the mod's archive into the game folder.** You should now have
-   `BepInEx\plugins\FollowingSeasCoop\FollowingSeasCoop.dll` with three more `.dll` files beside
-   it. Keep them together.
-5. **Start the game.** The title screen has a new **Co-op** button: the mod works.
+2. **Unpack the archive into that folder.** You should now have `winhttp.dll` next to
+   `Following Seas.exe`, and `BepInEx\plugins\FollowingSeasCoop\FollowingSeasCoop.dll` with three
+   more `.dll` files beside it. Keep them together.
+3. **Start the game.** The title screen has a new **Co-op** button: the mod works.
 
-To remove the mod, delete the folder `BepInEx\plugins\FollowingSeasCoop`.
+**Already have BepInEx?** Take the plugin-only archive and unpack it the same way. BepInEx must
+be version 5 for x64 (not 6), 5.4.23.5 or newer: older ones have trouble with this game's engine.
+The complete archive is safe too — it replaces BepInEx's own files with 5.4.23.5 and leaves your
+other mods and their settings alone.
+
+**To update**, unpack the new archive over the old one. Everybody updates together: two
+different versions of the mod do not connect.
+
+**To remove the mod**, delete the folder `BepInEx\plugins\FollowingSeasCoop`. To remove BepInEx
+as well, delete the `BepInEx` folder and the files `winhttp.dll`, `doorstop_config.ini`,
+`.doorstop_version` and `changelog.txt` beside `Following Seas.exe`. Your saves are not touched.
 
 ## 🎮 Play
 
@@ -153,8 +164,9 @@ Leave the `Dev` section alone: it is for developing the mod.
 
 ## 🛟 If something goes wrong
 
-- **There is no Co-op button on the title screen.** BepInEx or the mod is not in the right place:
-  check steps 2 and 4 of [Install](#-install).
+- **There is no Co-op button on the title screen.** The archive was not unpacked into the game
+  folder itself: check step 2 of [Install](#-install). A folder inside a folder
+  (`...\Following Seas\FollowingSeasCoop-0.1.0\BepInEx`) is the usual mistake.
 - **The host is not in the list.** The list shows Steam friends who host and games on your own
   network. For any other, type the host's address or Steam ID instead.
 - **The dialog says Steam is not running.** Start Steam, then open the Co-op dialog again. The
@@ -184,4 +196,5 @@ How the mod is built, how it works and its history of changes are in
 ## 📄 License
 
 [MIT](LICENSE). The mod ships with LiteNetLib and Facepunch.Steamworks, also under MIT, and with
-Valve's `steam_api64.dll`: see [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
+Valve's `steam_api64.dll`: see [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md). The complete
+archive also carries BepInEx as its authors publish it; its licenses are in `BepInEx\licenses`.

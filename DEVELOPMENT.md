@@ -22,13 +22,22 @@ The build fails with a file lock while the game runs from that folder.
 
 A release archive:
 
+The archives of a release:
+
 ```powershell
-Tools\Make-Release.ps1          # dist\FollowingSeasCoop-<version>.zip
+Tools\Make-Release.ps1
+# dist\FollowingSeasCoop-<version>.zip               the mod with BepInEx 5.4.23.5: the whole installation
+# dist\FollowingSeasCoop-<version>-plugin-only.zip   the mod alone, for a game that has BepInEx
 ```
 
-It runs the protocol check, builds, and packs the four libraries with `README.md`, `LICENSE` and
-`THIRD-PARTY-NOTICES.md` under `BepInEx\plugins\FollowingSeasCoop\`, so the archive is unpacked
-into the game folder. The version is read from `Plugin.cs`.
+It runs the protocol check, builds into a staging folder (the game's plugin folder is not
+touched, a running game is no obstacle), and packs the four libraries with `README.md`, `LICENSE`
+and `THIRD-PARTY-NOTICES.md` under `BepInEx\plugins\FollowingSeasCoop\`; both archives are
+unpacked into the game folder. The complete one adds the BepInEx archive as published (pinned by
+version and SHA256, kept in `dist\cache`, downloaded when missing) and `BepInEx\licenses\` from
+`Tools/ReleaseNotices`. The version is read from `Plugin.cs` and must be the built library's.
+
+To publish: commit, run the script, tag `v<version>` on that commit, and attach both archives.
 
 There is no automated test of the game logic: it is verified in game. The wire layer has a check
 that needs no game, `Tools/ProtocolSmoke`. The debugging tools — the trace, the comparison of two
@@ -132,3 +141,4 @@ wire protocol did.
 | 2026-10-11 | 12 | Dev button *Make a thing*: a thing made while the game runs is shared. |
 | 2026-10-11 | 12 | Release 0.1.0 prepared: player's README, this file, the release script. |
 | 2026-10-11 | 12 | Hosting and joining through Steam, in the Co-op page: friends list, Steam ID, friends only. |
+| 2026-10-11 | 12 | Two release archives: complete with BepInEx 5.4.23.5, and the plugin alone. |
