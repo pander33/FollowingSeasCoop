@@ -21,6 +21,8 @@ namespace FollowingSeasCoop.Runtime
         {
             public string Key;
             public Vector3 Position;
+            // Where it was at its Start in real space: the same on every copy, whatever its origin.
+            public double X, Y, Z;
             public string Captured;
         }
 
@@ -47,14 +49,28 @@ namespace FollowingSeasCoop.Runtime
 
         private static Placement Remember(ObjectInteractionHandler item, string captured)
         {
-            return Placements.GetValue(item, value => new Placement
+            return Placements.GetValue(item, value =>
             {
-                Key = SceneKey(value.transform), Position = value.transform.position, Captured = captured
+                var placement = new Placement
+                {
+                    Key = SceneKey(value.transform), Position = value.transform.position, Captured = captured
+                };
+                CoordSpace.LocalToReal(placement.Position, out placement.X, out placement.Y, out placement.Z);
+                return placement;
             });
         }
 
         internal static string KeyOf(ObjectInteractionHandler item) =>
             Placements.TryGetValue(item, out Placement placement) && placement.Captured == "Start" ? placement.Key : null;
+
+        /// <summary>The thing is no longer where its scene put it: somebody carried it off.</summary>
+        internal static bool MovedFromStart(ObjectInteractionHandler item, float metres)
+        {
+            if (!Placements.TryGetValue(item, out Placement placement) || placement.Captured != "Start") return false;
+            CoordSpace.LocalToReal(item.transform.position, out double x, out double y, out double z);
+            double dx = x - placement.X, dy = y - placement.Y, dz = z - placement.Z;
+            return dx * dx + dy * dy + dz * dz > (double)metres * metres;
+        }
 
         // Same-name ordinal at every level, including roots. Escape delimiters in Unity names.
         private static string SceneKey(Transform transform)

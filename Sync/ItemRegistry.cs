@@ -28,6 +28,8 @@ namespace FollowingSeasCoop.Sync
         /// <summary>A guest with no manifest asks for one this long after it entered the world.</summary>
         private const float RequestAfter = 3f;
         private const float RequestRetry = 5f;
+        /// <summary>A thing this far from where its scene put it was carried there, not nudged.</summary>
+        private const float MovedBefore = 1f;
 
         private static readonly FieldInfo FaunaField = AccessTools.Field(typeof(ObjectInteractionHandler), "isFauna");
         private static readonly FieldInfo TypeField = AccessTools.Field(typeof(ObjectInteractionHandler), "type");
@@ -138,14 +140,24 @@ namespace FollowingSeasCoop.Sync
             // Made while the game runs (the yield of a hunt): its path is not an identity, the next
             // one made gets the same. It stays this copy's own.
             if (item.name.EndsWith("(Clone)", StringComparison.Ordinal)) return;
-            Register(item, new ItemRecord
+            var record = new ItemRecord
             {
                 Key = key, Kind = ItemKind.Portable, Name = item.GetName(),
                 ItemType = TypeField.GetValue(item).ToString(),
                 Prefab = BaseName(item.name), Amount = AmountOf(item),
                 Status = item.isHeld ? ItemStatus.Held : ItemStatus.Free,
                 Holder = item.isHeld ? _net.MyNetId : 0
-            });
+            };
+            // Carried off before this session began: a guest's world has it where its scene put it, so
+            // it is shared from the start. This copy moves it like a thing just let go: a second
+            // later it rests where it lies, or where it lands if it was in the air.
+            if (_net.IsHost && CarryFields && !item.isHeld &&
+                item.GetComponent<FixedJoint>() == null && ItemCatalog.MovedFromStart(item, MovedBefore))
+            {
+                record.Flags |= ItemFlags.Touched;
+                if ((bool)PurchasedField.GetValue(item)) record.Flags |= ItemFlags.Purchased;
+            }
+            Register(item, record);
         }
 
         private void Register(Component obj, ItemRecord record)

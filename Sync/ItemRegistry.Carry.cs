@@ -114,6 +114,8 @@ namespace FollowingSeasCoop.Sync
         private readonly List<ObjectInteractionHandler> _hands = new List<ObjectInteractionHandler>();
         private readonly List<ItemMotionEntry> _motion = new List<ItemMotionEntry>();
         private readonly List<Entry> _resting = new List<Entry>();
+        // Things whose poses this copy has sent from this world: it really moves them.
+        private readonly HashSet<uint> _ledHere = new HashSet<uint>();
         private uint _requestId;
         private float _nextMotionAt, _worldSince;
         private string _notice;
@@ -136,7 +138,7 @@ namespace FollowingSeasCoop.Sync
 
         private void ClearCarry()
         {
-            _inHand.Clear(); _driven.Clear(); _standIns.Clear();
+            _inHand.Clear(); _driven.Clear(); _standIns.Clear(); _ledHere.Clear();
             _notice = null; Refused = 0;
         }
 
@@ -315,18 +317,25 @@ namespace FollowingSeasCoop.Sync
             if (entry != null && !_net.IsHost) entry.Record.Status = ItemStatus.Deleted;
         }
 
-        // A guest's world was loaded again with a thing in its hand: the host still has it there.
+        // A guest's world was loaded again with a thing in its hand, or with one it had let go and was
+        // still moving: the host still has it so. The new world's copy of the thing lies where its
+        // scene put it, so its poses must not be sent: the thing rests where the host last saw it.
         private void ReleaseStaleHolds()
         {
             if (!CarryReady) return;
             foreach (Entry entry in _ids.Values)
             {
                 ItemRecord r = entry.Record;
-                if (r.Kind != ItemKind.Portable || r.Status != ItemStatus.Held || r.Holder != _net.MyNetId) continue;
+                if (r.Kind != ItemKind.Portable || Mover(r) != _net.MyNetId) continue;
                 var item = entry.Object as ObjectInteractionHandler;
                 if (item != null && item.isHeld) { _inHand.Add(item); continue; }
-                ItemPose pose = item != null ? PoseOf(item) : r.Pose;
-                foreach (ItemActionKind action in new[] { ItemActionKind.Drop, ItemActionKind.Movement })
+                // A manifest asked for again in the same world: the thing is moved here for real.
+                if (item != null && r.Status != ItemStatus.Held && _ledHere.Contains(r.NetId)) continue;
+                bool held = r.Status == ItemStatus.Held;
+                ItemPose pose = r.Pose;
+                // Settled here too, at once: until the host answers this copy would lead the thing.
+                r.Status = ItemStatus.Free; r.Holder = 0; r.Flags |= ItemFlags.Settled;
+                foreach (ItemActionKind action in held ? new[] { ItemActionKind.Drop, ItemActionKind.Movement } : new[] { ItemActionKind.Movement })
                     _net.SendToHost(new ItemActionMsg
                     {
                         RequestId = ++_requestId, Action = action, Kind = ItemKind.Portable, NetId = r.NetId, Pose = pose,
@@ -557,6 +566,7 @@ namespace FollowingSeasCoop.Sync
             }
 
             r.Pose = pose;
+            if (r.NetId != 0) _ledHere.Add(r.NetId);
             if (r.NetId != 0)
                 _motion.Add(new ItemMotionEntry
                 {
