@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
 using LiteNetLib;
 using LiteNetLib.Utils;
 
@@ -130,6 +131,47 @@ namespace FollowingSeasCoop.Net
             _listener.PeerDisconnectedEvent += OnPeerDisconnected;
             _listener.NetworkReceiveEvent += OnNetworkReceive;
             _listener.NetworkErrorEvent += (endPoint, error) => _log("[CoopNet] Socket error " + error + " at " + endPoint);
+            _listener.NetworkReceiveUnconnectedEvent += OnLanQuery;
+        }
+
+        /// <summary>Host: answer machines of the local network that look for a game (config Network/AnnounceOnLan).</summary>
+        public bool AnnounceOnLan = true;
+        private ulong _lanSessionId;
+        private long _lanWindowTick;
+        private int _lanReplies;
+        private const int LanRepliesPerSecond = 20;
+
+        /// <summary>
+        /// Host: a machine on the local network asks who hosts a game. The answer is what the join
+        /// dialog shows: name, crew size, whether a guest would be let in now, and the protocol and
+        /// mod version, so a player with another build sees the host and why it cannot join.
+        /// </summary>
+        private void OnLanQuery(IPEndPoint remote, NetPacketReader reader, UnconnectedMessageType type)
+        {
+            try
+            {
+                if (Role != Role.Host || _net == null || !AnnounceOnLan) return;
+                if (!LanBeacon.IsQuery(reader)) return;
+                // The port may be reachable from outside the LAN: never more than a few small answers.
+                long now = Clock.LocalTick;
+                if (now - _lanWindowTick >= 1000) { _lanWindowTick = now; _lanReplies = 0; }
+                if (++_lanReplies > LanRepliesPerSecond) return;
+                string blocker;
+                try { blocker = JoinBlocker(); } catch { blocker = "host error"; }
+                var w = new NetDataWriter();
+                LanBeacon.WriteReply(w, new LanHost
+                {
+                    SessionId = _lanSessionId,
+                    ProtocolVersion = Protocol.Version,
+                    ModVersion = ModVersion,
+                    HostName = PlayerName,
+                    Players = _sessions.Count + 1,
+                    MaxPlayers = Math.Max(1, MaxClients) + 1,
+                    Accepting = blocker == null,
+                });
+                _net.SendUnconnectedMessage(w, remote);
+            }
+            catch (Exception e) { _log("[CoopNet] LAN query: " + e.Message); }
         }
 
         public int PeerCount => _sessions.Count;
@@ -184,6 +226,10 @@ namespace FollowingSeasCoop.Net
         {
             Stop();
             _net = NewManager();
+            // Only a host hears datagrams from outside a connection: the search of the local network.
+            _net.UnconnectedMessagesEnabled = _net.BroadcastReceiveEnabled = AnnounceOnLan;
+            // Names the session in the answers: a host is heard on every address it has, and is one game.
+            _lanSessionId = BitConverter.ToUInt64(Guid.NewGuid().ToByteArray(), 0) | 1UL;
             if (!_net.Start(port))
             {
                 _net = null;

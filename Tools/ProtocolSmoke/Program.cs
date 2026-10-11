@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using FollowingSeasCoop.Net;
 using LiteNetLib.Utils;
@@ -59,6 +60,11 @@ namespace FollowingSeasCoop.ProtocolSmoke
                 Section(t + ": noise", () => Noise(t));
             }
 
+            Section("LAN search: datagrams", LanDatagrams);
+            Section("LAN search: one row per host", LanRows);
+            Section("LAN search: broadcast addresses", LanBroadcast);
+            Section("LAN search: a host on this PC is found", LanFound);
+
             Console.WriteLine();
             Console.WriteLine("Protocol " + Protocol.Version + ": " + _checks + " checks, " + _failed + " failed.");
             return _failed == 0 ? 0 : 1;
@@ -90,6 +96,123 @@ namespace FollowingSeasCoop.ProtocolSmoke
         // ---------------------------------------------------------------------------------------
         // Checks
         // ---------------------------------------------------------------------------------------
+
+        private static NetDataReader Read(NetDataWriter w, int length = -1)
+        {
+            var bytes = new byte[length < 0 ? w.Length : length];
+            Array.Copy(w.Data, bytes, bytes.Length);
+            return new NetDataReader(bytes);
+        }
+
+        private static void LanDatagrams()
+        {
+            var query = new NetDataWriter();
+            LanBeacon.WriteQuery(query);
+            if (!LanBeacon.IsQuery(Read(query))) Fail("a query is not read as one");
+
+            var reply = new NetDataWriter();
+            LanBeacon.WriteReply(reply, new LanHost
+            {
+                SessionId = 77, ProtocolVersion = 10, ModVersion = "0.1.0", HostName = new string('n', 100),
+                Players = 2, MaxPlayers = 4, Accepting = true,
+            });
+            if (LanBeacon.IsQuery(Read(reply))) Fail("a reply is read as a query");
+            if (LanBeacon.TryReadReply(Read(query), out _)) Fail("a query is read as a reply");
+            if (!LanBeacon.TryReadReply(Read(reply), out LanHost host)) Fail("a reply is not read");
+            if (host.SessionId != 77 || host.ProtocolVersion != 10 || host.ModVersion != "0.1.0" || host.Players != 2 ||
+                host.MaxPlayers != 4 || !host.Accepting) Fail("a reply's fields changed on the way");
+            if (host.HostName.Length != Limits.Name) Fail("a long host name is not cut to " + Limits.Name);
+            for (int length = 0; length < reply.Length; length++)
+                if (LanBeacon.TryReadReply(Read(reply, length), out _)) Fail("a reply cut to " + length + " bytes is accepted");
+            var noise = new Random(5);
+            for (int i = 0; i < 2000; i++)
+            {
+                var bytes = new byte[noise.Next(0, 80)];
+                noise.NextBytes(bytes);
+                LanBeacon.TryReadReply(new NetDataReader(bytes), out _);   // must not throw
+                LanBeacon.IsQuery(new NetDataReader(bytes));
+            }
+        }
+
+        private static void LanRows()
+        {
+            var list = new LanHostList();
+            list.Seen(new LanHost { SessionId = 1, HostName = "b" }, "192.168.0.40", 7777, 0f);
+            list.Seen(new LanHost { SessionId = 1, HostName = "b" }, "172.18.0.1", 7777, 0.1f);
+            list.Seen(new LanHost { SessionId = 2, HostName = "a" }, "192.168.0.41", 7777, 0.1f);
+            LanHost[] rows = list.Snapshot();
+            if (rows.Length != 2) Fail("two hosts give " + rows.Length + " rows");
+            if (rows[0].HostName != "a") Fail("the rows are not in the order of names");
+            if (rows[1].Address != "192.168.0.40") Fail("a host's address changed while the first one still answers");
+            list.Seen(new LanHost { SessionId = 1, HostName = "b" }, "127.0.0.1", 7777, 0.2f);
+            if (list.Snapshot()[1].Address != "127.0.0.1") Fail("a host on this PC is not shown by its loopback address");
+            list.Expire(LanHostList.Lifetime + 0.15f);
+            if (list.Count != 1) Fail("a host that stopped answering is still listed");
+        }
+
+        private static void LanBroadcast()
+        {
+            string Of(string address, string mask)
+            {
+                IPAddress directed = LanSearch.Directed(IPAddress.Parse(address), IPAddress.Parse(mask));
+                return directed == null ? "none" : directed.ToString();
+            }
+            if (Of("192.168.0.40", "255.255.255.0") != "192.168.0.255") Fail("/24: " + Of("192.168.0.40", "255.255.255.0"));
+            if (Of("172.18.0.1", "255.255.255.252") != "172.18.0.3") Fail("/30: " + Of("172.18.0.1", "255.255.255.252"));
+            if (Of("10.1.2.3", "255.0.0.0") != "10.255.255.255") Fail("/8: " + Of("10.1.2.3", "255.0.0.0"));
+            if (Of("10.1.2.3", "255.255.255.255") != "none") Fail("/32 has a broadcast address");
+            if (Of("10.1.2.3", "0.0.0.0") != "none") Fail("an empty mask has a broadcast address");
+        }
+
+        // The real thing, over this PC's own network stack: a host and a search side by side.
+        private static void LanFound()
+        {
+            const int port = 47811;
+            bool world = false;
+            var host = new CoopNet(null) { PlayerName = "Smoke host", MaxClients = 3, JoinBlocker = () => world ? null : "no world" };
+            var search = new LanSearch(null);
+            try
+            {
+                host.StartHost(port);
+                if (!host.IsHost) Fail("the host did not start on port " + port + ": " + host.LastError);
+                LanHost[] found = Look(host, search, port, rows => rows.Length > 0);
+                if (found.Length != 1) Fail("found " + found.Length + " hosts, expected 1");
+                if (found[0].HostName != "Smoke host" || found[0].Players != 1 || found[0].MaxPlayers != 4 ||
+                    found[0].ProtocolVersion != Protocol.Version || found[0].Port != port)
+                    Fail("the host is described wrongly: " + found[0].HostName + " " + found[0].Players + "/" + found[0].MaxPlayers +
+                         " protocol " + found[0].ProtocolVersion + " port " + found[0].Port);
+                if (found[0].Accepting) Fail("a host with no world says it lets guests in");
+                world = true;
+                found = Look(host, search, port, rows => rows.Length > 0 && rows[0].Accepting);
+                if (found.Length != 1 || !found[0].Accepting) Fail("a host with a world does not say it lets guests in");
+
+                host.AnnounceOnLan = false;
+                host.StartHost(port);
+                search.Stop();
+                found = Look(host, search, port, rows => false);
+                if (found.Length != 0) Fail("a host that does not announce itself was found");
+            }
+            finally
+            {
+                search.Stop();
+                host.Stop();
+            }
+        }
+
+        private static LanHost[] Look(CoopNet host, LanSearch search, int port, Func<LanHost[], bool> enough)
+        {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            LanHost[] found = new LanHost[0];
+            while (clock.Elapsed.TotalSeconds < 2.5)
+            {
+                host.PollEvents();
+                search.Tick(true, (float)clock.Elapsed.TotalSeconds, port);
+                found = search.Hosts;
+                if (enough(found)) break;
+                System.Threading.Thread.Sleep(20);
+            }
+            return found;
+        }
 
         private static void Numbers()
         {

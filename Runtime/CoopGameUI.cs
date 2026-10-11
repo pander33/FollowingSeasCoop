@@ -34,6 +34,7 @@ namespace FollowingSeasCoop.Runtime
 
         private const float RefWidth = 1600f, RefHeight = 900f;   // the game's canvases
         private const int MaxFailures = 3;
+        private const int FoundRows = 4;   // games of the local network shown in the join dialog
 
         private static readonly Color Slate = new Color(0.129f, 0.131f, 0.142f, 0.97f);
         private static readonly Color Ink = new Color(0.196f, 0.196f, 0.196f, 1f);
@@ -62,6 +63,11 @@ namespace FollowingSeasCoop.Runtime
         private static GameObject _bar, _nameRow, _hostRow, _slotsRow, _portRow, _addressRow;
         private static TMP_InputField _name, _host, _port;
         private static Button _join, _back, _hostButton, _rescue, _end, _yes, _no, _copy, _minus, _plus;
+        private static TextMeshProUGUI _foundTitle;
+        private static readonly GameObject[] _foundRows = new GameObject[FoundRows];
+        private static readonly TextMeshProUGUI[] _foundTexts = new TextMeshProUGUI[FoundRows];
+        private static readonly Button[] _foundJoins = new Button[FoundRows];
+        private static LanHost[] _found = new LanHost[0];
 
         private static Place _place = Place.Closed;
         private static string _note = "";
@@ -82,6 +88,9 @@ namespace FollowingSeasCoop.Runtime
         public static bool Broken { get; private set; }
 
         public static bool Open => _place != Place.Closed;
+
+        /// <summary>The join dialog is showing: the games of the local network are wanted in it.</summary>
+        public static bool WantsLanSearch => _place == Place.Title;
 
         /// <summary>The game's ESC menu of the loaded world is showing.</summary>
         public static bool GameMenuOpen
@@ -500,6 +509,15 @@ namespace FollowingSeasCoop.Runtime
             _lanAddress = LanAddress();
         }
 
+        // A game found on the local network: its address goes into the field, as if typed.
+        private static void JoinFound(int row)
+        {
+            if (row >= _found.Length) return;
+            LanHost found = _found[row];
+            _host.text = found.Port == Plugin.Port.Value ? found.Address : found.Address + ":" + found.Port;
+            Join();
+        }
+
         private static void Step(int by)
         {
             _slots = Mathf.Clamp(_slots + by, 1, Limits.RosterEntries - 1);
@@ -586,6 +604,7 @@ namespace FollowingSeasCoop.Runtime
 
             _nameRow.SetActive(idle);
             _hostRow.SetActive(idle && title);
+            Found(coop, idle && title, blocker == null);
             _slotsRow.SetActive(idle && !title);
             _portRow.SetActive(idle && !title);
             _slotsText.text = _slots.ToString();
@@ -623,7 +642,7 @@ namespace FollowingSeasCoop.Runtime
             Caption(_no, hosting ? "Keep hosting" : "Stay");
 
             _hint.text = title
-                ? (idle ? "The host finds the address under Esc, Co-op. You sail in the host's world; your own saves are not touched."
+                ? (idle ? "A game on your network is listed by itself. For any other, the host finds the address under Esc, Co-op. You sail in the host's world; your own saves are not touched."
                         : "")
                 : hosting ? "On another network a guest needs your public address, and UDP port " + Plugin.Port.Value + " forwarded to this PC."
                 : session ? "Only the host saves the world."
@@ -632,6 +651,31 @@ namespace FollowingSeasCoop.Runtime
 
             Arrange(title);
             Navigate(title);
+        }
+
+        // The games heard on the local network, each with a Join of its own. A game that cannot be
+        // joined is listed too, with the reason: that it is seen at all tells the player the
+        // network is fine.
+        private static void Found(CoopBehaviour coop, bool shown, bool mayJoin)
+        {
+            _found = shown ? coop.LanSearch.Hosts : new LanHost[0];
+            _foundTitle.gameObject.SetActive(shown);
+            if (shown) _foundTitle.text = _found.Length == 0 ? "Looking for games on your network..." : "On your network";
+            for (int i = 0; i < FoundRows; i++)
+            {
+                bool used = i < _found.Length;
+                _foundRows[i].SetActive(used);
+                if (!used) continue;
+                LanHost found = _found[i];
+                string why = found.ProtocolVersion != Protocol.Version ? "another mod version (" + Plain(found.ModVersion) + ")"
+                    : found.Players >= found.MaxPlayers ? "full"
+                    : !found.Accepting ? "no world loaded yet"
+                    : "";
+                string name = found.HostName.Length > 0 ? Plain(found.HostName) : "Host";
+                _foundTexts[i].text = name + "   <alpha=#B0>" + found.Players + "/" + found.MaxPlayers + "   " +
+                                      (why.Length > 0 ? why : found.Address) + "<alpha=#FF>";
+                _foundJoins[i].interactable = mayJoin && why.Length == 0;
+            }
         }
 
         private static string HostName(CoopNet net)
@@ -695,7 +739,9 @@ namespace FollowingSeasCoop.Runtime
         // the game's buttons beside it stay in reach.
         private static void Navigate(bool title)
         {
-            Selectable[] all = { _name, _host, _port, _minus, _plus, _hostButton, _copy, _join, _back, _rescue, _end, _yes, _no };
+            var all = new List<Selectable> { _name, _host };
+            all.AddRange(_foundJoins);
+            all.AddRange(new Selectable[] { _port, _minus, _plus, _hostButton, _copy, _join, _back, _rescue, _end, _yes, _no });
             EventSystem events = EventSystem.current;
             GameObject selected = events != null ? events.currentSelectedGameObject : null;
             if (!title)
@@ -849,6 +895,25 @@ namespace FollowingSeasCoop.Runtime
             _hostRow = Row(_window, "Host address");
             _host = Field(_hostRow.transform, 128, TMP_InputField.ContentType.Standard, -1f);
             _host.onSubmit.AddListener(_ => Guarded(Join));
+
+            _foundTitle = Text(_window, "Found", _bodyFont, 13f, Soft);
+            for (int i = 0; i < FoundRows; i++)
+            {
+                int row = i;
+                RectTransform found = Node(_window, "Found " + i);
+                var across = found.gameObject.AddComponent<HorizontalLayoutGroup>();
+                across.spacing = 10f;
+                across.childAlignment = TextAnchor.MiddleLeft;
+                across.childControlWidth = across.childControlHeight = true;
+                across.childForceExpandWidth = across.childForceExpandHeight = false;
+                Size(found.gameObject, -1f, 34f);
+                _foundTexts[i] = Text(found, "Game", _plainFont, 17f, Color.white);
+                _foundTexts[i].textWrappingMode = TextWrappingModes.NoWrap;
+                _foundTexts[i].overflowMode = TextOverflowModes.Ellipsis;
+                Size(_foundTexts[i].gameObject, -1f, -1f).flexibleWidth = 1f;
+                _foundJoins[i] = MakeButton(found, "Join", () => JoinFound(row), 90f);
+                _foundRows[i] = found.gameObject;
+            }
 
             _slotsRow = Row(_window, "Guests");
             _minus = MakeButton(_slotsRow.transform, "-", () => Step(-1), 40f);

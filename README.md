@@ -50,8 +50,12 @@ Everyone needs the same version of the mod and of the game.
 - **Host:** load your world, press **Esc**, choose **Co-op**, then **Host this world**. The page
   then shows the address to give your friends (with **Copy**) and who is aboard. Your name, the
   number of guests and the UDP port are set on the same page before hosting.
-- **Guest:** choose **Co-op** on the title screen, type the host's address, choose **Join**. An
-  address may carry a port (`192.168.0.40:7777`); without one the configured port is used.
+- **Guest:** choose **Co-op** on the title screen. A game hosted on your network is listed there
+  by itself, with a **Join** of its own. For any other, type the host's address and choose
+  **Join**. An address may carry a port (`192.168.0.40:7777`); without one the configured port
+  is used.
+- The list asks every network adapter of the PC (a second network, a VPN adapter). A host does
+  not answer when `Network/AnnounceOnLan` is off in its settings.
 - On the same network the address shown to the host is enough. Over the internet the guest needs
   the host's public address, and the host's router must forward the UDP port to the host's PC.
 - **Leave the crew** (Esc, Co-op) returns a guest to the title screen; **Stop hosting** keeps the

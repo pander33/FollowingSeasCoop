@@ -35,6 +35,11 @@ namespace FollowingSeasCoop.Runtime
         /// <summary>What the menu shows about the last thing that happened ("Connected", an error...).</summary>
         public string Notice { get; private set; } = "";
 
+        /// <summary>Looks for hosts on the local network while the join dialog wants the list.</summary>
+        public readonly LanSearch LanSearch = new LanSearch(message => Plugin.Log.LogInfo(message));
+        private int _lanSearchErrors;
+        private const int DefaultPort = 7777;
+
         private void Awake()
         {
             Instance = this;
@@ -172,6 +177,7 @@ namespace FollowingSeasCoop.Runtime
             Net.PlayerName = string.IsNullOrEmpty(Plugin.PlayerName.Value) ? "Player" : Plugin.PlayerName.Value;
             Net.MaxClients = Mathf.Clamp(Plugin.MaxClients.Value, 1, Limits.RosterEntries - 1);
             Net.DisconnectTimeoutMs = Plugin.DisconnectTimeoutMs.Value;
+            Net.AnnounceOnLan = Plugin.AnnounceOnLan.Value;
         }
 
         // -----------------------------------------------------------------
@@ -330,6 +336,7 @@ namespace FollowingSeasCoop.Runtime
                 // Each guards itself: the menu must not take the network's frame with it.
                 CoopGameUI.TickInput(this);
                 CoopGameUI.TickPanel(this);
+                TickLanSearch();
                 Net.PollEvents();
                 try { TickDev(); }
                 catch (Exception e)
@@ -436,13 +443,29 @@ namespace FollowingSeasCoop.Runtime
             _flashUntil = Time.unscaledTime + 4f;
         }
 
+        // A host may listen on the port of this copy's settings or on the usual one; both are asked.
+        private void TickLanSearch()
+        {
+            try
+            {
+                bool wanted = CoopGameUI.WantsLanSearch && Net.Role == Role.None && !Net.Closing;
+                LanSearch.Tick(wanted, Time.unscaledTime, Plugin.Port.Value, DefaultPort);
+            }
+            catch (Exception e)
+            {
+                if (_lanSearchErrors++ < 3) Plugin.Log.LogWarning("[Coop] The search of the local network failed: " + e);
+            }
+        }
+
         private void OnApplicationQuit()
         {
+            try { LanSearch.Stop(); } catch { }
             try { Net.Stop("The game was closed"); Net.FinishClosing(); } catch { }
         }
 
         private void OnDestroy()
         {
+            try { LanSearch.Stop(); } catch { }
             CoopGameUI.Dispose();
             if (Items != null) SceneManager.sceneUnloaded -= Items.WorldUnloaded;
             if (Hunt != null) SceneManager.sceneUnloaded -= Hunt.WorldUnloaded;

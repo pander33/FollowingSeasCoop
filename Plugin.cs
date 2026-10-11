@@ -20,6 +20,7 @@ namespace FollowingSeasCoop
         internal static ConfigEntry<int> Port;
         internal static ConfigEntry<string> JoinIp;
         internal static ConfigEntry<int> MaxClients;
+        internal static ConfigEntry<bool> AnnounceOnLan;
         internal static ConfigEntry<int> DisconnectTimeoutMs;
         internal static ConfigEntry<int> SendRateHz;
         internal static ConfigEntry<int> InterpDelayMs;
@@ -44,6 +45,8 @@ namespace FollowingSeasCoop
             Port = Config.Bind("Network", "Port", 7777, "UDP port the host listens on and a client connects to.");
             JoinIp = Config.Bind("Network", "JoinIp", "127.0.0.1", "Host address used by Join.");
             MaxClients = Config.Bind("Network", "MaxClients", 3, "How many guests the host accepts.");
+            AnnounceOnLan = Config.Bind("Network", "AnnounceOnLan", true,
+                "The host answers players of the local network who look for a game, so it appears in their Co-op dialog. Off = the game is joined by address only. Applied when hosting starts.");
             DisconnectTimeoutMs = Config.Bind("Network", "DisconnectTimeoutMs", 15000,
                 "Silence after which a link is considered lost. A world load blocks the game for seconds, so keep it generous.");
             SendRateHz = Config.Bind("Sync", "SendRateHz", 20, "How many times a second a player's pose is sent.");
