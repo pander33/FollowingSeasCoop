@@ -423,6 +423,19 @@ namespace FollowingSeasCoop.Runtime
             return "Oakum " + stores.currentOakum.ToString("F0") + ", food " + stores.currentFood.ToString("F0");
         });
 
+        /// <summary>
+        /// A new barrel or sack like the nearest one, in front of the player, for every copy. The
+        /// one button here that tells the mod anything: a thing made while the game runs has no
+        /// name of its own, so it is given one; the rest is the registry's usual way.
+        /// </summary>
+        public string DevMakeThing() => Dev(() =>
+        {
+            PlayerHandler player = GameAccess.Player;
+            if (player == null) return "No world is loaded";
+            Vector3 ahead = player.orientation != null ? player.orientation.forward : Vector3.forward;
+            return Items.DevSpawn(player.transform.position + ahead * 1.5f + Vector3.up * 0.5f);
+        });
+
         public string DevGoToRowboat() => Dev(() =>
         {
             PlayerHandler player = GameAccess.Player;
@@ -747,6 +760,8 @@ namespace FollowingSeasCoop.Runtime
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Take a contract")) _devNotice = DevTakeContract();
             if (GUILayout.Button("Load a crate")) _devNotice = DevLoadCrate();
+            GUI.enabled = GameAccess.InWorld && Participating;
+            if (GUILayout.Button("Make a thing")) _devNotice = DevMakeThing();
             GUILayout.EndHorizontal();
 
             // The sea and the sky are the host's: a guest's are written over four times a second.

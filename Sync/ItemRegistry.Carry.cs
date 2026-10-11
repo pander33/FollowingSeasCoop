@@ -738,23 +738,73 @@ namespace FollowingSeasCoop.Sync
                 if (source == null) continue;
                 if (!Enum.TryParse(r.ItemType, out ProvisionsController.ProvisionType type)) continue;
 
-                GameObject made = UnityEngine.Object.Instantiate(source);
-                made.name = r.Prefab;
-                SceneManager.MoveGameObjectToScene(made, SceneManager.GetSceneByBuildIndex(GameAccess.WorldScene));
-                foreach (FixedJoint joint in made.GetComponents<FixedJoint>()) UnityEngine.Object.Destroy(joint);
-                ObjectInteractionHandler item = made.GetComponent<ObjectInteractionHandler>();
-                // Before its Start: what the thing is comes from the record, not from the model.
-                item.isHeld = false; item.cs = null; item.uiPrompt = null;
-                item.allowPurchase = false; item.namePreset = true;
-                item.SetType(type); item.SetName(r.Name);
-                AmountField.SetValue(item, r.Amount);
-                PurchasedField.SetValue(item, true);
+                ObjectInteractionHandler item = Make(source, r.Prefab, type, r.Name, r.Amount);
 
                 // Known to the registry before its Start is seen, or it would be taken for a new thing.
                 _objects[item] = r.Key; _owners[r.Key] = item; _standIns.Add(item);
                 entry.Object = item;
                 Plugin.Log.LogInfo("[Items] Stand-in made for '" + r.Name + "' (" + r.Prefab + ", NetId " + r.NetId + ")");
             }
+        }
+
+        // A copy of a like thing, told what it is before its Start.
+        private static ObjectInteractionHandler Make(GameObject source, string prefab, ProvisionsController.ProvisionType type, string name, float amount)
+        {
+            GameObject made = UnityEngine.Object.Instantiate(source);
+            made.name = prefab;
+            SceneManager.MoveGameObjectToScene(made, SceneManager.GetSceneByBuildIndex(GameAccess.WorldScene));
+            foreach (FixedJoint joint in made.GetComponents<FixedJoint>()) UnityEngine.Object.Destroy(joint);
+            ObjectInteractionHandler item = made.GetComponent<ObjectInteractionHandler>();
+            // What the thing is comes from what it is made for, not from the model.
+            item.isHeld = false; item.cs = null; item.uiPrompt = null;
+            item.allowPurchase = false; item.namePreset = true;
+            item.SetType(type); item.SetName(name);
+            AmountField.SetValue(item, amount);
+            PurchasedField.SetValue(item, true);
+            return item;
+        }
+
+        // -----------------------------------------------------------------
+        // Things made to be shared
+        // -----------------------------------------------------------------
+
+        // A thing made while the game runs has no scene path of its own to be named by. One made
+        // through here is given a name when it is made, and from its Start on it is treated like
+        // the yield of a hunt: a touched thing, which the other copies show as a stand-in.
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ObjectInteractionHandler, string> MadeKeys =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<ObjectInteractionHandler, string>();
+
+        private static string MadeKey(ObjectInteractionHandler item) =>
+            MadeKeys.TryGetValue(item, out string key) ? key : null;
+
+        /// <summary>
+        /// Dev: a new thing like the nearest one, at a point of the scene, for every copy. The others
+        /// show it once they have a like thing loaded to copy.
+        /// </summary>
+        internal string DevSpawn(Vector3 at)
+        {
+            if (!_active || !CarryReady) return "Things are not shared now (a session must run)";
+            if (_net.IsClient && !_complete) return "The host's list of things has not come yet";
+            ObjectInteractionHandler model = null;
+            float distance = float.MaxValue;
+            foreach (Component obj in _objects.Keys)
+            {
+                if (!(obj is ObjectInteractionHandler like) || like == null || like.isHeld || !like.gameObject.activeInHierarchy) continue;
+                float d = Vector3.Distance(like.transform.position, at);
+                if (d < distance) { distance = d; model = like; }
+            }
+            if (model == null) return "No thing is loaded here to copy";
+
+            string prefab = BaseName(model.name);
+            string name = StartNameField.GetValue(model) as string ?? "";
+            ObjectInteractionHandler item = Make(model.gameObject, prefab, (ProvisionsController.ProvisionType)TypeField.GetValue(model), name, AmountOf(model));
+            item.transform.SetPositionAndRotation(at, Quaternion.identity);
+            // The model may be one the mod holds still.
+            Rigidbody body = item.GetComponent<Rigidbody>();
+            if (body != null) body.isKinematic = false;
+            // The same name must never be given twice, by any copy, in any session of this world.
+            MadeKeys.Add(item, "made:" + Guid.NewGuid().ToString("N"));
+            return "Made '" + name + "' (" + prefab + "), like the one " + distance.ToString("F0") + " m away";
         }
 
         private string DescribeCarry()

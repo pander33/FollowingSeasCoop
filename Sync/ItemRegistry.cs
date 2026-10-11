@@ -138,8 +138,9 @@ namespace FollowingSeasCoop.Sync
             if (!_active || !FieldsFound || _objects.ContainsKey(item) || _duplicates.Contains(item) ||
                 (bool)FaunaField.GetValue(item)) return;
             // Made while the game runs: its path is not an identity, the next one made gets the same.
-            // The yield of a hunt is named after its animal; anything else stays this copy's own.
-            string yield = HuntSync.YieldKey(item);
+            // The yield of a hunt is named after its animal, a thing made to be shared by its maker;
+            // anything else stays this copy's own.
+            string yield = HuntSync.YieldKey(item) ?? MadeKey(item);
             if (yield != null) key = yield;
             else if (item.name.EndsWith("(Clone)", StringComparison.Ordinal)) return;
             var record = new ItemRecord

@@ -90,6 +90,10 @@ calls the synchronisation — the synchronisation is what is being tested:
   at once, as the game's Accept button does); *Load a crate*: one crate of the first contract with
   cargo left, in the first free place of the hold — the cargo panel's steps without the panel,
   so without its 400 m rule and without the mod's one-player-at-a-time panel;
+- *Make a thing* (in a session): a new barrel or sack like the nearest one, in front of the
+  player, for every copy. The one button that tells the mod anything: the thing is given a name
+  (`made:<guid>`), and from there the registry shares it like the yield of a hunt. Another copy
+  shows it once it has a like thing loaded to copy — a second or so when both stand at one place;
 - *Next weather*, *Time +3 h* (host only: a guest's sea and sky are written over by the host's);
 - *Go to a dock* (the nearest loaded contract board), *Go to the rowboat* (when it is in the
   water), *Overboard* (20 m abeam of the ship);
