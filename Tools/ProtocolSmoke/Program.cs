@@ -23,14 +23,15 @@ namespace FollowingSeasCoop.ProtocolSmoke
             { "ControlRequest", 14 }, { "ControlState", 15 }, { "ItemManifest", 16 }, { "ItemAction", 17 },
             { "ItemState", 18 }, { "ItemMotion", 19 }, { "EconomyState", 20 }, { "EconomyDelta", 21 },
             { "TaskState", 22 }, { "JournalLine", 23 }, { "CargoOps", 24 }, { "CargoState", 25 },
-            { "CargoLease", 26 }, { "AnimalState", 27 }, { "FishRecord", 28 },
+            { "CargoLease", 26 }, { "AnimalState", 27 }, { "FishRecord", 28 }, { "RowboatState", 29 }, { "CrewOrder", 30 },
+            { "CrewState", 31 },
         };
 
         private static readonly Dictionary<string, int> FrozenControls = new Dictionary<string, int>
         {
             { "Steering", 1 }, { "Reef", 2 }, { "Rope", 3 }, { "Winch", 4 }, { "Door", 5 }, { "Lantern", 6 },
             { "Ballast", 7 }, { "Anchor", 8 }, { "Mooring", 9 }, { "Water", 10 }, { "Pump", 11 },
-            { "Leak", 12 }, { "TrollWeight", 13 }, { "FishPoint", 14 },
+            { "Leak", 12 }, { "TrollWeight", 13 }, { "FishPoint", 14 }, { "Rowboat", 15 }, { "TrollLine", 16 }, { "CrewHelm", 17 },
         };
 
         // Lists a message does not shorten by itself: the code that sends them cuts them into

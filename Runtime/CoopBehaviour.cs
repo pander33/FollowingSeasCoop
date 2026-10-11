@@ -30,6 +30,8 @@ namespace FollowingSeasCoop.Runtime
         internal TaskSync Tasks { get; private set; }
         internal CargoSync Cargo { get; private set; }
         internal HuntSync Hunt { get; private set; }
+        internal RowboatSync Rowboat { get; private set; }
+        internal CrewSync Crew { get; private set; }
 
         private Harmony _harmony;
         /// <summary>What the menu shows about the last thing that happened ("Connected", an error...).</summary>
@@ -63,6 +65,8 @@ namespace FollowingSeasCoop.Runtime
             Tasks = new TaskSync(Net);
             Cargo = new CargoSync(Net, Tasks);
             Hunt = new HuntSync(Net);
+            Rowboat = new RowboatSync(Net, Boats);
+            Crew = new CrewSync(Net);
             SceneManager.sceneUnloaded += Items.WorldUnloaded;
             SceneManager.sceneUnloaded += Hunt.WorldUnloaded;
 
@@ -96,6 +100,8 @@ namespace FollowingSeasCoop.Runtime
             PatchHealth.Install("Hull", () => ControlsSync.InstallHull(_harmony), log);
             // Without it a shot animal and its yield stay on the hunter's copy.
             PatchHealth.Install("Hunt", () => HuntSync.Install(_harmony), log);
+            // Without it a guest's orders go to its own crew, whose work the host's ship never sees.
+            PatchHealth.Install("Crew", () => CrewSync.Install(_harmony), log);
             PatchHealth.Install("Co-op UI", () => CoopGameUI.Install(_harmony), log);
             Plugin.Log.LogInfo("Patches: " + PatchHealth.Details);
         }
@@ -205,6 +211,7 @@ namespace FollowingSeasCoop.Runtime
             Items.RemovePlayer(netId);
             Economy.RemovePlayer(netId);
             Cargo.RemovePlayer(netId);
+            Rowboat.RemovePlayer(netId);
             Notice = "A player left";
         }
 
@@ -239,6 +246,8 @@ namespace FollowingSeasCoop.Runtime
             Economy.Clear();
             Tasks.Clear();
             Cargo.Clear();
+            Rowboat.Clear();
+            Crew.Clear();
             InputBlock.Set(InputBlock.Reason.HostPause, false);
         }
 
@@ -284,6 +293,9 @@ namespace FollowingSeasCoop.Runtime
                     case MsgType.CargoLease: Cargo.OnLease((CargoLeaseMsg)msg, from); break;
                     case MsgType.AnimalState: Hunt.OnState((AnimalStateMsg)msg, from); break;
                     case MsgType.FishRecord: Economy.OnRecord((FishRecordMsg)msg, from); break;
+                    case MsgType.RowboatState: Rowboat.OnState((RowboatStateMsg)msg, from); break;
+                    case MsgType.CrewOrder: Crew.OnOrder((CrewOrderMsg)msg, from); break;
+                    case MsgType.CrewState: Crew.OnState((CrewStateMsg)msg); break;
                 }
             }
             catch (Exception e)
@@ -356,6 +368,7 @@ namespace FollowingSeasCoop.Runtime
                 if (Participating)
                 {
                     Boats.FrameTick();
+                    Rowboat.FrameTick();
                     // The sea before the players: a guest's wind and waves are the host's from this frame on.
                     if (Net.IsHost) Env.HostTick(); else Env.GuestTick();
                     Controls.Tick();
@@ -375,6 +388,11 @@ namespace FollowingSeasCoop.Runtime
                     catch (Exception e)
                     {
                         if (_updateErrors++ < 20) Plugin.Log.LogError("[Cargo] Tick failed: " + e);
+                    }
+                    try { Crew.Tick(); }
+                    catch (Exception e)
+                    {
+                        if (_updateErrors++ < 20) Plugin.Log.LogError("[Crew] Tick failed: " + e);
                     }
                     string carried = Items.PopNotice();
                     if (carried != null) Flash(carried);
@@ -400,6 +418,7 @@ namespace FollowingSeasCoop.Runtime
             {
                 if (!Participating) return;
                 if (Net.IsHost) Boats.HostFixedTick(); else Boats.GuestFixedTick();
+                Rowboat.FixedTick();
             }
             catch (Exception e)
             {
@@ -413,7 +432,11 @@ namespace FollowingSeasCoop.Runtime
             {
                 Players.ApplyRemotes();
                 // After the avatars and the ship: a carried thing is drawn against both.
-                if (Participating) Items.LateTick();
+                if (Participating)
+                {
+                    Items.LateTick();
+                    Crew.LateTick();
+                }
             }
             catch (Exception e)
             {

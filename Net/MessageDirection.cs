@@ -26,6 +26,8 @@ namespace FollowingSeasCoop.Net
                 case MsgType.AnimalState:
                 case MsgType.FishRecord:
                 case MsgType.PlayerState:
+                case MsgType.RowboatState:
+                case MsgType.CrewOrder:
                     return true;
                 default:
                     return false;
@@ -60,6 +62,8 @@ namespace FollowingSeasCoop.Net
                 case MsgType.TaskState:
                 case MsgType.JournalLine:
                 case MsgType.PlayerState:
+                case MsgType.RowboatState:
+                case MsgType.CrewState:
                     return true;
                 default:
                     return false;

@@ -12,15 +12,18 @@ namespace FollowingSeasCoop.Sync
     ///
     /// On the ship the pose is hull-local: each player stands on its own copy of the same ship, and
     /// hull-local coordinates map identically whatever the floating origin or the ship's position on
-    /// that machine. Off the ship the pose is in real space (<see cref="CoordSpace"/>).
+    /// that machine. The launched rowboat is a frame of the same kind. Anywhere else the pose is in
+    /// real space (<see cref="CoordSpace"/>).
     /// </summary>
     internal sealed class PlayerSync
     {
+        private const byte FrameReal = 0, FrameShip = 1, FrameRowboat = 2;
+
         private sealed class Remote
         {
             public uint NetId;
             public readonly NetTransform Pose = new NetTransform();
-            public bool OnShip;
+            public byte Frame;
             public bool HasFrame;
             public GameObject Avatar;
             public Animator Animator;
@@ -40,7 +43,7 @@ namespace FollowingSeasCoop.Sync
 
         // Local capture.
         private float _nextSendAt;
-        private bool _lastOnShip;
+        private byte _lastFrame;
         private Vector3 _lastFramePos;
         private bool _hasLastFramePos;
         private float _lastCaptureAt;
@@ -83,19 +86,23 @@ namespace FollowingSeasCoop.Sync
             Transform orientation = player.orientation != null ? player.orientation : player.transform;
             Vector3 feet = Feet(player);
 
-            // "On the ship" means on the player ship itself, the hull every machine has. A rowboat or
-            // another vessel is not a shared frame yet, so a player there is sent in real space.
+            // "On the ship" means on the player ship itself, the hull every machine has; the launched
+            // rowboat is the other deck every machine has. Any other vessel is not a shared frame,
+            // so a player there is sent in real space.
             ShipHullMover ship = GameAccess.ActiveShip();
-            bool onShip = ship != null && player.ship != null && player.ship == ship.gameObject;
+            byte frame = FrameReal;
+            Transform deck = null;
+            if (ship != null && player.ship != null && player.ship == ship.gameObject) { frame = FrameShip; deck = ship.transform; }
+            else if (RowboatSync.Boat != null && player.ship == RowboatSync.Boat) { frame = FrameRowboat; deck = RowboatSync.Boat.transform; }
 
             var state = new PlayerStateMsg { NetId = _net.MyNetId, Tick = _net.Clock.ServerTick };
             Vector3 framePos;
             Vector3 forward;
-            if (onShip)
+            if (deck != null)
             {
-                state.Flags |= PlayerFlags.OnShip;
-                framePos = ship.transform.InverseTransformPoint(feet);
-                forward = ship.transform.InverseTransformDirection(orientation.forward);
+                state.Flags |= frame == FrameShip ? PlayerFlags.OnShip : PlayerFlags.OnRowboat;
+                framePos = deck.InverseTransformPoint(feet);
+                forward = deck.InverseTransformDirection(orientation.forward);
                 state.X = framePos.x; state.Y = framePos.y; state.Z = framePos.z;
             }
             else
@@ -113,7 +120,7 @@ namespace FollowingSeasCoop.Sync
             if (camera != null) state.Pitch = Mathf.DeltaAngle(0f, camera.transform.eulerAngles.x);
 
             float dt = now - _lastCaptureAt;
-            if (_hasLastFramePos && onShip == _lastOnShip && dt > 0.001f && dt < 0.5f)
+            if (_hasLastFramePos && frame == _lastFrame && dt > 0.001f && dt < 0.5f)
             {
                 Vector3 velocity = (framePos - _lastFramePos) / dt;
                 // Faster than a person moves: a teleport or an origin shift, not motion.
@@ -121,7 +128,7 @@ namespace FollowingSeasCoop.Sync
             }
             _lastFramePos = framePos;
             _hasLastFramePos = true;
-            _lastOnShip = onShip;
+            _lastFrame = frame;
             _lastCaptureAt = now;
 
             if (player.state == PlayerHandler.MovementState.crouching) state.Flags |= PlayerFlags.Crouching;
@@ -129,7 +136,7 @@ namespace FollowingSeasCoop.Sync
 
             state.Tool = ToolVisuals.LocalKind();
             state.ToolUse = ToolVisuals.LocalUseCount;
-            ToolVisuals.Measure(player, feet, onShip ? ship.transform.up : Vector3.up);
+            ToolVisuals.Measure(player, feet, deck != null ? deck.up : Vector3.up);
 
             msg = state;
             return true;
@@ -163,12 +170,13 @@ namespace FollowingSeasCoop.Sync
                 remote = new Remote { NetId = msg.NetId };
                 _remotes[msg.NetId] = remote;
             }
-            bool onShip = (msg.Flags & PlayerFlags.OnShip) != 0;
-            if (!remote.HasFrame || remote.OnShip != onShip)
+            byte frame = (msg.Flags & PlayerFlags.OnShip) != 0 ? FrameShip
+                : (msg.Flags & PlayerFlags.OnRowboat) != 0 ? FrameRowboat : FrameReal;
+            if (!remote.HasFrame || remote.Frame != frame)
             {
                 // Positions of two frames cannot be interpolated.
                 remote.Pose.Clear();
-                remote.OnShip = onShip;
+                remote.Frame = frame;
                 remote.HasFrame = true;
                 remote.HasLastWorld = false;
             }
@@ -200,8 +208,11 @@ namespace FollowingSeasCoop.Sync
             {
                 if (!_net.HasMember(remote.NetId)) { _gone.Add(remote.NetId); continue; }
                 if (!remote.Pose.Sample(serverNow, out double x, out double y, out double z, out float yaw, out float pitch)) continue;
-                if (remote.OnShip && ship == null)
+                Transform deck = remote.Frame == FrameShip ? (ship != null ? ship.transform : null)
+                    : remote.Frame == FrameRowboat ? (RowboatSync.Boat != null ? RowboatSync.Boat.transform : null) : null;
+                if (remote.Frame != FrameReal && deck == null)
                 {
+                    // Its deck is not here (yet): a pose on it cannot be placed.
                     if (remote.Avatar != null && remote.Avatar.activeSelf) remote.Avatar.SetActive(false);
                     continue;
                 }
@@ -211,10 +222,10 @@ namespace FollowingSeasCoop.Sync
 
                 Vector3 world;
                 Quaternion rotation;
-                if (remote.OnShip)
+                if (deck != null)
                 {
-                    world = ship.transform.TransformPoint(new Vector3((float)x, (float)y, (float)z));
-                    rotation = ship.transform.rotation * Quaternion.Euler(0f, yaw, 0f);
+                    world = deck.TransformPoint(new Vector3((float)x, (float)y, (float)z));
+                    rotation = deck.rotation * Quaternion.Euler(0f, yaw, 0f);
                 }
                 else
                 {
@@ -222,7 +233,7 @@ namespace FollowingSeasCoop.Sync
                     rotation = Quaternion.Euler(0f, yaw, 0f);
                 }
                 remote.Avatar.transform.SetPositionAndRotation(world, rotation);
-                Animate(remote, ship);
+                Animate(remote, deck);
                 // After the body: the tool hangs at its eye.
                 remote.Tools.Apply(remote.Avatar, pitch, remote.Crouching, remote.Tool, remote.ToolUse);
             }
@@ -246,12 +257,12 @@ namespace FollowingSeasCoop.Sync
         }
 
         /// <summary>Drives the crew model's own walk parameters from how fast the avatar moves over the deck or the ground.</summary>
-        private static void Animate(Remote remote, ShipHullMover ship)
+        private static void Animate(Remote remote, Transform deck)
         {
             // Speed is measured in the frame the player walks in: on a sailing ship the world position
             // changes even when the player stands still.
-            Vector3 framePos = remote.OnShip && ship != null
-                ? ship.transform.InverseTransformPoint(remote.Avatar.transform.position)
+            Vector3 framePos = deck != null
+                ? deck.InverseTransformPoint(remote.Avatar.transform.position)
                 : remote.Avatar.transform.position;
             float dt = Time.unscaledDeltaTime;
             if (remote.HasLastWorld && dt > 0.0001f)
@@ -295,7 +306,7 @@ namespace FollowingSeasCoop.Sync
             foreach (Remote remote in _remotes.Values)
             {
                 if (sb.Length > 0) sb.Append("; ");
-                sb.Append(remote.NetId).Append(remote.OnShip ? " ship" : " real");
+                sb.Append(remote.NetId).Append(remote.Frame == FrameShip ? " ship" : remote.Frame == FrameRowboat ? " rowboat" : " real");
                 if (remote.Avatar != null) sb.Append(' ').Append(remote.Avatar.transform.position.ToString("F1"));
                 else sb.Append(" (no avatar)");
             }

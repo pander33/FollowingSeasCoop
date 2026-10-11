@@ -137,7 +137,7 @@ namespace FollowingSeasCoop.Sync
                 case ControlKind.Ballast: return _ballast;
                 case ControlKind.Anchor: return _anchor;
                 case ControlKind.Water: return _water;
-                default: return FindHull(kind, index);
+                default: return FindHull(kind, index) ?? FindBoat(kind, index);
             }
         }
 
@@ -182,7 +182,7 @@ namespace FollowingSeasCoop.Sync
                 case ControlKind.Water:
                     reading.A = HullMass;
                     return reading.A > 0f;
-                default: return ReadHull(slot, ref reading);
+                default: return ReadHull(slot, ref reading) || ReadBoat(slot, ref reading, out held);
             }
         }
 
@@ -207,9 +207,13 @@ namespace FollowingSeasCoop.Sync
                            !TryParsePoint(slot.Text, out double sx, out double sy, out double sz) ||
                            Math.Abs(x - sx) + Math.Abs(y - sy) + Math.Abs(z - sz) > 0.5;
                 case ControlKind.Mooring:
-                    return Mathf.RoundToInt(reading.A) != Mathf.RoundToInt(slot.A);
+                    return Mathf.RoundToInt(reading.A) != Mathf.RoundToInt(slot.A) || Mathf.Abs(reading.B - slot.B) > 0.05f;
                 case ControlKind.Water:
                     return Mathf.Abs(reading.A - slot.A) > 1f;
+                case ControlKind.Rowboat:
+                case ControlKind.TrollLine:
+                case ControlKind.CrewHelm:
+                    return DiffersBoat(slot, reading);
                 default:
                     return DiffersHull(slot, reading);
             }
@@ -233,10 +237,20 @@ namespace FollowingSeasCoop.Sync
                     _ship.UpdateCurrentBallast(slot.A, slot.B, slot.C);
                     return true;
                 case ControlKind.Anchor: return ApplyAnchor(slot);
-                case ControlKind.Mooring: return ApplyMooring(slot);
+                case ControlKind.Mooring:
+                {
+                    if (!ApplyMooring(slot)) return false;
+                    RopeInteractionHandler line = _moorings[slot.Index];
+                    if (line != null && !line.isHeld) SetMooringLength(line, slot.B);
+                    return true;
+                }
                 case ControlKind.Water:
                     if (slot.A > 0f) HullMass = slot.A;
                     return true;
+                case ControlKind.Rowboat:
+                case ControlKind.TrollLine:
+                case ControlKind.CrewHelm:
+                    return ApplyBoat(slot);
                 default: return ApplyHull(slot);
             }
         }
@@ -424,6 +438,7 @@ namespace FollowingSeasCoop.Sync
             if (line == null) return false;
             held = line.isHeld;
             reading.A = -1f;
+            reading.B = MooringLength(line);
             if (held || line.transform.root == _ship.transform) return true;
             int cleat = CleatIndex(line.transform);
             if (cleat < 0) return false;   // tied to something the list does not know

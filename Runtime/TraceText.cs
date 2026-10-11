@@ -29,6 +29,7 @@ namespace FollowingSeasCoop.Runtime
                 case MsgType.CargoState:
                 case MsgType.CargoLease: return "Cargo";
                 case MsgType.AnimalState: return "Hunt";
+                case MsgType.CrewOrder: return "Crew";
                 default: return null;
             }
         }
@@ -42,13 +43,16 @@ namespace FollowingSeasCoop.Runtime
                 case MsgType.EnvState: return "Sea";
                 case MsgType.ItemMotion: return "Item poses";
                 case MsgType.WorldChunk: return "World chunks";
+                case MsgType.RowboatState: return "Rowboat";
+                case MsgType.CrewState: return "Crew poses";
                 default: return type.ToString();
             }
         }
 
-        /// <summary>The wheel while it is turned and the hull's water: too many to keep one by one.</summary>
+        /// <summary>The wheel while it is turned, the hull's water and a line being reeled: too many to keep one by one.</summary>
         public static bool Quiet(INetMessage msg) =>
-            msg is ControlMsg control && (control.Kind == ControlKind.Steering || control.Kind == ControlKind.Water);
+            msg is ControlMsg control && (control.Kind == ControlKind.Steering || control.Kind == ControlKind.Water ||
+                                          control.Kind == ControlKind.TrollLine);
 
         public static void Describe(INetMessage msg, out string key, out string value)
         {
@@ -96,6 +100,10 @@ namespace FollowingSeasCoop.Runtime
                 case FishRecordMsg m:
                     key = "record";
                     value = m.Line;
+                    break;
+                case CrewOrderMsg m:
+                    key = "order";
+                    value = m.Flags + "  course " + F(m.Heading) + "  pumps " + m.Pumps + "  masts " + m.Reefs.Length;
                     break;
                 case CargoOpsMsg m:
                     key = "ship " + m.ShipId;

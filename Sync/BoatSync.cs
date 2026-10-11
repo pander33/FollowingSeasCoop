@@ -64,7 +64,7 @@ namespace FollowingSeasCoop.Sync
             _physicsClockSet = true;
         }
 
-        private long PhysicsTick => _physicsClockSet
+        internal long PhysicsTick => _physicsClockSet
             ? (long)(Time.fixedTimeAsDouble * 1000.0 + _physicsToHostMs)
             : _net.Clock.ServerTick;
 
@@ -248,12 +248,19 @@ namespace FollowingSeasCoop.Sync
         {
             PatchGuard.Run(() =>
             {
-                if (!GuestSlave || __instance.ship == null) return;
-                ShipHullMover ship = GameAccess.ActiveShip();
-                if (ship == null || __instance.ship != ship.gameObject) return;
+                if (__instance.ship == null) return;
+                Vector3 hull;
+                // The same for a rowboat that another player's copy moves: it is kinematic here too.
+                if (RowboatSync.Slave && __instance.ship == RowboatSync.Boat) hull = RowboatSync.SlaveVelocity;
+                else
+                {
+                    if (!GuestSlave) return;
+                    ShipHullMover ship = GameAccess.ActiveShip();
+                    if (ship == null || __instance.ship != ship.gameObject) return;
+                    hull = GuestVelocity;
+                }
                 Rigidbody body = __instance.GetRigidbody();
                 if (body == null || body.isKinematic) return;
-                Vector3 hull = GuestVelocity;
                 Vector3 own = body.linearVelocity;
                 bool crouching = CrouchingField != null && (bool)CrouchingField.GetValue(__instance);
                 float y = crouching && hull.y < 0f ? hull.y * 2f : own.y;

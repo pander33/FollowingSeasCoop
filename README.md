@@ -1,9 +1,9 @@
 # Following Seas Co-op
 
 A co-op mod for [Following Seas](https://store.steampowered.com/app/2895440/). Early development
-(v0.1.0, protocol 10): a guest can join the host's world, the players see each other, the ship, the
-sea, the weather and the time of day are the host's, and the ship's controls are
-shared. **Leaks, the rowboat and crew orders are not shared yet.**
+(v0.1.0, protocol 11): a guest can join the host's world, the players see each other, the ship, the
+sea, the weather and the time of day are the host's, and the ship's controls, things, household,
+rowboat and crew are shared.
 
 Unofficial; not made or endorsed by Whipstaff Games.
 
@@ -36,6 +36,16 @@ Written and built; only partly tried in game so far.
   yet.
 - Cargo crates are shared: any player can load, move, unload and deliver them, one player at a
   time at the cargo panel; a second player sees who is loading. Built, not tried in game yet.
+- The rowboat: any player can launch and stow it; the player who is in it rows it and the others
+  see it move, with that player in it. Built, not tried in game yet.
+- Crew orders: a guest's orders in the crew panel (course, sails, pumps) are carried out by the
+  host's crew, and every player sees the crew at work. Built, not tried in game yet.
+- The reel of a trolling line and the length of a mooring line are shared. Built, not tried in
+  game yet.
+
+Not shared: taking a new crew member aboard (do it as the host; a guest sees the newcomer after
+joining again), living animals (only a shot one), a fish in another player's hand, another
+player's shot and the view through its spyglass.
 
 ## Install
 

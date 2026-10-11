@@ -36,6 +36,9 @@ namespace FollowingSeasCoop.Net
         CargoLease = 26,
         AnimalState = 27,
         FishRecord = 28,
+        RowboatState = 29,
+        CrewOrder = 30,
+        CrewState = 31,
     }
 
     public interface INetMessage
@@ -335,6 +338,8 @@ namespace FollowingSeasCoop.Net
         OnShip = 1,
         Crouching = 2,
         Swimming = 4,
+        /// <summary>The pose is in the frame of the launched rowboat.</summary>
+        OnRowboat = 8,
     }
 
     /// <summary>
@@ -500,7 +505,7 @@ namespace FollowingSeasCoop.Net
         Ballast = 7,
         /// <summary>The kedge anchor. B = 1 when laid, A = cable length, Text = the anchor's point in real space.</summary>
         Anchor = 8,
-        /// <summary>A mooring line. Index = line, A = index of the dock cleat in the world's list, -1 when not moored.</summary>
+        /// <summary>A mooring line. Index = line, A = index of the dock cleat in the world's list, -1 when not moored, B = the line's length.</summary>
         Mooring = 9,
         /// <summary>Host → clients only: the hull's mass with the water in it. A = kilograms.</summary>
         Water = 10,
@@ -512,6 +517,12 @@ namespace FollowingSeasCoop.Net
         TrollWeight = 13,
         /// <summary>A hook of a trolling line. Index = hook, A = 1 with a fish on it, B = the fish's scale.</summary>
         FishPoint = 14,
+        /// <summary>The ship's rowboat. A = 1 when it is in the water.</summary>
+        Rowboat = 15,
+        /// <summary>The reel of a trolling line. Index = line pair, Text = where each hook is along the outer and the inner line.</summary>
+        TrollLine = 16,
+        /// <summary>Host → clients only: the host's crew. A = 1 when it steers, B = the course, C = how many are at the pumps.</summary>
+        CrewHelm = 17,
     }
 
     /// <summary>

@@ -165,6 +165,7 @@ namespace FollowingSeasCoop.Sync
 
             Guard(BindDeck);
             Guard(BindHull);
+            Guard(BindBoat);
 
             Plugin.Log.LogInfo("[Controls] Bound to ship '" + ship.id + "': " + Counts());
             return true;
@@ -192,6 +193,7 @@ namespace FollowingSeasCoop.Sync
             _reefDrivers = new IEnumerator[0];
             UnbindDeck();
             UnbindHull();
+            UnbindBoat();
         }
 
         // -----------------------------------------------------------------
@@ -343,7 +345,8 @@ namespace FollowingSeasCoop.Sync
             uint sender = _net.PlayerNetIdForPeer(from);
             if (sender == 0) return;
             if (msg.Kind == ControlKind.Pump) { Guard(() => HostPump(msg.A)); return; }
-            if (msg.Kind == ControlKind.Water) return;   // the host's own figure, never a guest's
+            // The host's own figure and the host's own crew, never a guest's.
+            if (msg.Kind == ControlKind.Water || msg.Kind == ControlKind.CrewHelm) return;
             Slot slot = Find(msg.Kind, msg.Index);
             if (slot == null) return;
 
@@ -447,7 +450,8 @@ namespace FollowingSeasCoop.Sync
             (string.IsNullOrEmpty(slot.Text) ? "" : " '" + slot.Text + "'");
 
         // The wheel while it is turned and the hull's water arrive many times a second.
-        private static bool Traced(ControlKind kind) => kind != ControlKind.Steering && kind != ControlKind.Water;
+        private static bool Traced(ControlKind kind) =>
+            kind != ControlKind.Steering && kind != ControlKind.Water && kind != ControlKind.TrollLine;
 
         private Slot Find(ControlKind kind, int index)
         {
@@ -471,14 +475,15 @@ namespace FollowingSeasCoop.Sync
         {
             // Not lanterns: a guest's own oil store runs out by itself and would put the host's lights out.
             return kind == ControlKind.Anchor || kind == ControlKind.Mooring ||
-                   kind == ControlKind.Leak || kind == ControlKind.TrollWeight || kind == ControlKind.FishPoint;
+                   kind == ControlKind.Leak || kind == ControlKind.TrollWeight || kind == ControlKind.FishPoint ||
+                   kind == ControlKind.Rowboat;
         }
 
         /// <summary>Kinds worked with a hand on them for a while: one player at a time.</summary>
         private static bool Leased(ControlKind kind)
         {
             return kind == ControlKind.Steering || kind == ControlKind.Reef || kind == ControlKind.Rope ||
-                   kind == ControlKind.Winch || kind == ControlKind.Ballast;
+                   kind == ControlKind.Winch || kind == ControlKind.Ballast || kind == ControlKind.TrollLine;
         }
 
         /// <summary>The least time between two reports of a state that changes by itself all the time.</summary>
@@ -732,7 +737,7 @@ namespace FollowingSeasCoop.Sync
         private string Counts()
         {
             return "steering " + (_steer != null ? "yes" : "no") + ", masts " + _reefs.Length + ", ropes " + _ropeSlots.Length +
-                   CountsDeck() + CountsHull();
+                   CountsDeck() + CountsHull() + CountsBoat();
         }
 
         /// <summary>Diagnostics: what every control reads on this copy right now.</summary>
