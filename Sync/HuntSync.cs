@@ -41,6 +41,7 @@ namespace FollowingSeasCoop.Sync
 
         // Written by the patches, which are static.
         private static WanderingGameController s_harvesting;
+        private static Vector3 s_harvestAt;
         private static bool s_applying;
 
         private readonly CoopNet _net;
@@ -233,9 +234,6 @@ namespace FollowingSeasCoop.Sync
             harmony.Patch(Method("Harvest"),
                           prefix: new HarmonyMethod(typeof(HuntSync), nameof(HarvestPrefix)),
                           finalizer: new HarmonyMethod(typeof(HuntSync), nameof(HarvestEnd)));
-            harmony.Patch(AccessTools.Method(typeof(ObjectInteractionHandler), "SetType")
-                              ?? throw new MissingMethodException(nameof(ObjectInteractionHandler), "SetType"),
-                          postfix: new HarmonyMethod(typeof(HuntSync), nameof(SetTypePostfix)));
         }
 
         private static MethodInfo Method(string name) =>
@@ -256,24 +254,14 @@ namespace FollowingSeasCoop.Sync
             PatchGuard.Run(() => { if (!s_applying && FieldsFound) Instance?.Killed(__instance); }, PatchError);
         }
 
-        // The game harvests only a dead animal: it makes the yield, names it and removes the carcass.
+        // The game harvests only a dead animal: it makes the yield half a metre above the animal,
+        // names it and removes the carcass.
         private static void HarvestPrefix(WanderingGameController __instance)
         {
             PatchGuard.Run(() =>
             {
                 s_harvesting = FieldsFound && (bool)DeadField.GetValue(__instance) ? __instance : null;
-            }, PatchError);
-        }
-
-        // The one call the game makes on the yield while it is made, and makes nowhere else.
-        private static void SetTypePostfix(ObjectInteractionHandler __instance)
-        {
-            if (s_harvesting == null) return;
-            PatchGuard.Run(() =>
-            {
-                if (!Keys.TryGetValue(s_harvesting, out string key)) return;
-                Yields.Remove(__instance);
-                Yields.Add(__instance, "hunt:" + key);
+                if (s_harvesting != null) s_harvestAt = __instance.transform.position + new Vector3(0f, 0.5f, 0f);
             }, PatchError);
         }
 
@@ -282,7 +270,30 @@ namespace FollowingSeasCoop.Sync
             WanderingGameController animal = s_harvesting;
             s_harvesting = null;
             if (animal == null) return;
-            PatchGuard.Run(() => Instance?.Harvested(animal), PatchError);
+            PatchGuard.Run(() =>
+            {
+                MarkYield(animal);
+                Instance?.Harvested(animal);
+            }, PatchError);
+        }
+
+        // The yield is found by where the game has just put it. Not by a patch on a call the game
+        // makes on it: those are setters of one line, which Mono builds into the caller, and a
+        // patch on such a method is never run.
+        private static void MarkYield(WanderingGameController animal)
+        {
+            if (!Keys.TryGetValue(animal, out string key)) return;
+            var prefab = YieldField.GetValue(animal) as GameObject;
+            if (prefab == null) return;
+            string name = prefab.name + "(Clone)";
+            foreach (ObjectInteractionHandler item in UnityEngine.Object.FindObjectsByType<ObjectInteractionHandler>(FindObjectsSortMode.None))
+            {
+                if (item.name != name || (item.transform.position - s_harvestAt).sqrMagnitude > 0.01f) continue;
+                if (Yields.TryGetValue(item, out _)) continue;
+                Yields.Add(item, "hunt:" + key);
+                return;
+            }
+            Plugin.Log.LogWarning("[Hunt] The yield of a harvest was not found; it stays this copy's own");
         }
     }
 }

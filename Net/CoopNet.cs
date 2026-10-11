@@ -422,6 +422,17 @@ namespace FollowingSeasCoop.Net
             }
         }
 
+        private int _wrongSide;
+
+        // A message this side may not receive is a mistake in the mod, not in the session: without
+        // a line in the log the feature it belongs to would only look dead.
+        private void WrongSide(MsgType type)
+        {
+            _wrongSide++;
+            if (_wrongSide <= 5 || _wrongSide % 500 == 0)
+                Protocol.Warn("[CoopNet] " + type + " dropped: this side does not take it (occurrence #" + _wrongSide + ")");
+        }
+
         private void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod method)
         {
             INetMessage msg = Protocol.Read(reader, out MsgType type);
@@ -429,7 +440,7 @@ namespace FollowingSeasCoop.Net
 
             if (Role == Role.Host)
             {
-                if (!MessageDirection.FromClient(type)) return;
+                if (!MessageDirection.FromClient(type)) { WrongSide(type); return; }
                 if (!_sessions.TryGetValue(peer.Id, out var session)) return;
                 if (type == MsgType.Hello) { HandleHello(session, (HelloMsg)msg); return; }
                 if (!session.HandshakeDone) return;   // nothing else is accepted before the handshake
@@ -446,7 +457,7 @@ namespace FollowingSeasCoop.Net
             }
 
             if (Role != Role.Client || peer != _hostPeer) return;
-            if (!MessageDirection.FromHost(type)) return;
+            if (!MessageDirection.FromHost(type)) { WrongSide(type); return; }
             switch (type)
             {
                 case MsgType.HelloAck:

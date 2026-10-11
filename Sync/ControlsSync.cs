@@ -288,6 +288,11 @@ namespace FollowingSeasCoop.Sync
                 if (!slot.Known) { Store(slot, reading); slot.Known = true; return; }
             }
 
+            // The local player has just done this. A state the host sent before it heard of it must
+            // not undo it here: it waits, like a state for a control in hand, and by then the host
+            // has said what it reads after this change. Every further change starts the wait anew.
+            if (_net.IsClient && GuestSpeaksOnChange(slot.Kind)) slot.HeldAt = now;
+
             if (!driven) Store(slot, reading);
             Publish(slot, now, local);
         }

@@ -250,6 +250,8 @@ namespace FollowingSeasCoop.Runtime
                         {
                             Tasks.SendAll(Net.PlayerNetIdForPeer(from));
                             Hunt.SendAll(Net.PlayerNetIdForPeer(from));
+                            // Its ship is the one of the save again: every control as it stands now.
+                            Controls.MarkAllDirty();
                         }
                         break;
                     case MsgType.TaskState: Tasks.OnTask((TaskStateMsg)msg, from); break;

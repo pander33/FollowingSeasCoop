@@ -121,8 +121,8 @@ namespace FollowingSeasCoop.Sync
             if (ship != null) ship.UpdateCargoMass();
         }
 
-        // The game writes a record as "id=weight" with the weight in the machine's own number
-        // format; on the wire the weight has a point.
+        // The game writes a record as "id=weight". It sets the thread's culture to en-US itself, so
+        // the weight has a point; a comma is read too, should that ever change.
         private static bool ParseRecord(string line, out string id, out float weight)
         {
             id = null; weight = 0f;
@@ -435,7 +435,7 @@ namespace FollowingSeasCoop.Sync
             Look(dp);
             GameData data = dp.gameData;
             if (data.fishRecords == null) data.fishRecords = new List<string>();
-            // As the game writes it, so the game on this machine can read it back.
+            // As the game writes it.
             string line = id + "=" + weight;
             // The game itself replaces the line of a kind whenever it calls a catch a record, with
             // a lighter one too: the latest line is the record.
