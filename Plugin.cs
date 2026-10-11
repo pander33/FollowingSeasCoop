@@ -35,6 +35,7 @@ namespace FollowingSeasCoop
         internal static ConfigEntry<bool> DevAutoHost;
         internal static ConfigEntry<bool> DevAutoJoin;
         internal static ConfigEntry<bool> DevRunInBackground;
+        internal static ConfigEntry<string> DevWindow;
 
         private void Awake()
         {
@@ -75,6 +76,9 @@ namespace FollowingSeasCoop
                 "Development: join Network/JoinIp from the title screen, trying again until the host answers.");
             DevRunInBackground = Config.Bind("Dev", "RunInBackground", false,
                 "Development: keep the game running while its window is not the active one.");
+            DevWindow = Config.Bind("Dev", "Window", "",
+                "Development: keep the game in a window at this place and size, as x,y,width,height (0,0,1280,720). " +
+                "The game's options switch to full screen by themselves. Empty = left to the game.");
             ApplyCommandLine();
 
             // The BepInEx manager object can be destroyed by the game; the loop must outlive scenes.

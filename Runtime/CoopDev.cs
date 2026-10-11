@@ -77,8 +77,84 @@ namespace FollowingSeasCoop.Runtime
 
         private string Who => Net.IsHost ? "host" : Net.IsClient && Net.State == LinkState.Connected ? "guest" + Net.MyNetId : "";
 
+        private int[] _window;
+        private bool _windowRead;
+        private float _windowRetryAt;
+        private float _windowPlaceAt;
+
+        // Dev/Window. The game's options panels call Screen.SetResolution(..., fullscreen: true)
+        // when they are built (title screen, world) and when they are confirmed, so a window asked
+        // for on the command line lasts until the title screen. Polled: the calls are in listeners.
+        private void TickWindow()
+        {
+            if (!_windowRead)
+            {
+                _windowRead = true;
+                string text = Plugin.DevWindow.Value ?? "";
+                if (text.Trim().Length == 0) return;
+                string[] parts = text.Split(',');
+                var numbers = new int[4];
+                bool good = parts.Length == 4;
+                for (int i = 0; good && i < 4; i++) good = int.TryParse(parts[i].Trim(), out numbers[i]);
+                if (!good || numbers[2] < 320 || numbers[3] < 200)
+                {
+                    Plugin.Log.LogWarning("[Dev] Dev/Window '" + text + "' is not x,y,width,height");
+                    return;
+                }
+                _window = numbers;
+            }
+            if (_window == null) return;
+            float now = Time.unscaledTime;
+            if (Screen.fullScreen)
+            {
+                // The change takes a frame or more to show in Screen.fullScreen.
+                if (now < _windowRetryAt) return;
+                _windowRetryAt = now + 0.5f;
+                _windowPlaceAt = now + 0.5f;
+                Screen.SetResolution(_window[2], _window[3], FullScreenMode.Windowed);
+                return;
+            }
+            if (_windowPlaceAt < 0f || now < _windowPlaceAt) return;
+            _windowPlaceAt = -1f;
+            if (!GameWindow.MoveTo(_window[0], _window[1])) Plugin.Log.LogInfo("[Dev] Dev/Window: the game's window was not found");
+        }
+
+        private static class GameWindow
+        {
+            [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+            private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string title);
+            [System.Runtime.InteropServices.DllImport("user32.dll")]
+            private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+            [System.Runtime.InteropServices.DllImport("user32.dll")]
+            private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+            [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+            private static extern uint GetCurrentProcessId();
+
+            // Two copies run at once: the window is found by its process, not by its title.
+            public static bool MoveTo(int x, int y)
+            {
+                try
+                {
+                    uint me = GetCurrentProcessId();
+                    IntPtr window = IntPtr.Zero;
+                    for (int i = 0; i < 64; i++)
+                    {
+                        window = FindWindowEx(IntPtr.Zero, window, "UnityWndClass", null);
+                        if (window == IntPtr.Zero) return false;
+                        GetWindowThreadProcessId(window, out uint owner);
+                        if (owner != me) continue;
+                        // No size, no order, no activation: only the place.
+                        return SetWindowPos(window, IntPtr.Zero, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010);
+                    }
+                }
+                catch { }
+                return false;
+            }
+        }
+
         private void TickDev()
         {
+            TickWindow();
             Net.LagMs = Plugin.DevLagMs.Value;
             Net.JitterMs = Plugin.DevJitterMs.Value;
 

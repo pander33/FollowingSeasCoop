@@ -42,10 +42,6 @@ $exe = Join-Path $GameDir 'Following Seas.exe'
 if (-not (Test-Path $exe)) { Write-Host "No game at $exe"; exit 1 }
 if (-not $GuestSaveDir) { $GuestSaveDir = Join-Path $GameDir '_guest-saves' }
 
-Add-Type -Namespace Win32 -Name Window -MemberDefinition @'
-[DllImport("user32.dll")] public static extern bool MoveWindow(System.IntPtr handle, int x, int y, int width, int height, bool repaint);
-'@
-
 function Get-Common {
     $list = @('-screen-fullscreen', '0', '-screen-width', "$Width", '-screen-height', "$Height",
               '--coop:Dev.RunInBackground=true', "--coop:Dev.LagMs=$LagMs", "--coop:Dev.JitterMs=$JitterMs",
@@ -56,17 +52,12 @@ function Get-Common {
 }
 
 function Start-Copy([string[]]$arguments, [int]$x) {
+    # The game's options go to full screen by themselves at the title screen: the plugin keeps
+    # the window (Dev/Window) and puts it in its place.
+    $arguments += "--coop:Dev.Window=$x,0,$Width,$Height"
     # An argument with a space in it (a folder) must reach the game as one argument.
     $line = ($arguments | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' '
-    $process = Start-Process -FilePath $exe -WorkingDirectory $GameDir -ArgumentList $line -PassThru
-    for ($i = 0; $i -lt 120 -and $process.MainWindowHandle -eq [IntPtr]::Zero; $i++) {
-        Start-Sleep -Milliseconds 500
-        $process.Refresh()
-    }
-    if ($process.MainWindowHandle -ne [IntPtr]::Zero) {
-        [void][Win32.Window]::MoveWindow($process.MainWindowHandle, $x, 0, $Width, $Height + 40, $true)
-    }
-    return $process
+    return Start-Process -FilePath $exe -WorkingDirectory $GameDir -ArgumentList $line -PassThru
 }
 
 $hostArgs = Get-Common

@@ -53,6 +53,7 @@ from one folder read the same file). A setting given that way is never written t
 | `Dev/AutoHost`, `Dev/AutoJoin` | Hosts once a world is loaded; joins `Network/JoinIp` from the title screen until the host answers. |
 | `Dev/RunInBackground` | Keeps the game running while its window is not the active one. |
 | `Dev/SaveDir` | This copy's saves and settings go to another folder. |
+| `Dev/Window` | `x,y,width,height`: keeps the game in a window of that size at that place. The game's options switch to full screen whenever they are built or confirmed; this switches back. |
 
 `<who>` is `host`, `guest2` (the NetId), or `solo` outside a session.
 
@@ -125,8 +126,9 @@ Tools\Start-Pair.ps1 -NoAuto -NoTools                        # as a player would
 ```
 
 Load your world in the left window: it hosts by itself five seconds later, and the right window
-joins by itself. The game remembers the window size it was started with: after this script it
-starts windowed at that size until you change it in its settings.
+joins by itself. The windows are kept windowed and in place by the plugin (`Dev/Window`), since
+the game goes to full screen by itself at the title screen. The game remembers the window size it
+was started with: after this script it starts at that size until its options are confirmed.
 The guest keeps its saves in `<GameDir>\_guest-saves`. `-LagMs` is per copy, so a message one way
 takes that long and an answer twice that.
 
