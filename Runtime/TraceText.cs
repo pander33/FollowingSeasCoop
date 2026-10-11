@@ -29,7 +29,8 @@ namespace FollowingSeasCoop.Runtime
                 case MsgType.CargoState:
                 case MsgType.CargoLease: return "Cargo";
                 case MsgType.AnimalState: return "Hunt";
-                case MsgType.CrewOrder: return "Crew";
+                case MsgType.CrewOrder:
+                case MsgType.CrewRoster: return "Crew";
                 default: return null;
             }
         }
@@ -100,6 +101,10 @@ namespace FollowingSeasCoop.Runtime
                 case FishRecordMsg m:
                     key = "record";
                     value = m.Line;
+                    break;
+                case CrewRosterMsg m:
+                    key = "roster";
+                    value = "aboard " + string.Join(",", m.Aboard) + "  owned " + m.Owned.Length;
                     break;
                 case CrewOrderMsg m:
                     key = "order";

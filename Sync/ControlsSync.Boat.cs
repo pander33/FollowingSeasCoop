@@ -23,15 +23,34 @@ namespace FollowingSeasCoop.Sync
         private static readonly FieldInfo MoorRopeField = AccessTools.Field(typeof(RopeInteractionHandler), "rope");
         private static readonly FieldInfo MoorCursorField = AccessTools.Field(typeof(RopeInteractionHandler), "cursor");
         private static readonly MethodInfo MoorJointMethod = AccessTools.Method(typeof(RopeInteractionHandler), "UpdateConfigJoint");
+        private static readonly FieldInfo PumpAnimatorField = AccessTools.Field(typeof(PumpController), "animator");
+        private static readonly FieldInfo PumpAudioField = AccessTools.Field(typeof(PumpController), "pumpAudio");
+        private static readonly FieldInfo PumpPistonField = AccessTools.Field(typeof(PumpController), "isPistonType");
+        private static readonly FieldInfo PumpWheelField = AccessTools.Field(typeof(PumpController), "isWheelType");
+        private static readonly FieldInfo PumpJunkField = AccessTools.Field(typeof(PumpController), "isJunkType");
+        private const int MaxPumpBits = 24;   // the mask travels as a float
 
         private Slot _rowboat, _crewHelm;
         private Slot[] _reelSlots = new Slot[0];
         private PumpController[] _crewPumps = new PumpController[0];
+        private Animator[] _pumpAnimators = new Animator[0];
+        private AudioSource[] _pumpSounds = new AudioSource[0];
+        private bool[] _pumpShown = new bool[0];
+        private float[] _pumpBeatAt = new float[0];
 
         /// <summary>Guest: the host's crew is at the helm. Read by the crew panel's patch.</summary>
         public static bool HostCrewSteers { get; private set; }
         /// <summary>Guest: how many of the host's crew are at the pumps.</summary>
-        public static int HostCrewPumping { get; private set; }
+        public static int HostCrewPumping
+        {
+            get
+            {
+                int count = 0;
+                for (int mask = s_hostPumps; mask != 0; mask >>= 1) count += mask & 1;
+                return count;
+            }
+        }
+        private static int s_hostPumps;
         private static float s_hostCourse;
 
         private void BindBoat()
@@ -43,16 +62,86 @@ namespace FollowingSeasCoop.Sync
                 _reelSlots = MakeSlots(ControlKind.TrollLine, _trolls.Length);
             if (_wheelController != null) _all.Add(_crewHelm = new Slot { Kind = ControlKind.CrewHelm });
             _crewPumps = _ship.GetComponentsInChildren<PumpController>(true);
+            _pumpShown = new bool[_crewPumps.Length];
+            _pumpBeatAt = new float[_crewPumps.Length];
+            _pumpAnimators = new Animator[_crewPumps.Length];
+            _pumpSounds = new AudioSource[_crewPumps.Length];
+            for (int i = 0; i < _crewPumps.Length; i++)
+            {
+                _pumpAnimators[i] = PumpAnimatorField?.GetValue(_crewPumps[i]) as Animator;
+                _pumpSounds[i] = PumpAudioField?.GetValue(_crewPumps[i]) as AudioSource;
+            }
         }
 
-        // How many of this copy's crew are at the pumps, or on their way there.
-        private int PumpingCrew()
+        /// <summary>
+        /// A pump whose crew member is gone from the crew goes on turning: the game's pumping
+        /// routine runs on the crew member and ends with it, before it can stop the pump.
+        /// </summary>
+        public static void StopPump(ShipHullMover ship, CrewInteractionObject station)
         {
-            int working = 0;
-            foreach (PumpController pump in _crewPumps)
-                if (pump != null && pump.isActiveAndEnabled && pump.crewTarget != null &&
-                    (pump.crewTarget.interacting || pump.crewTarget.assigned)) working++;
-            return working;
+            foreach (PumpController pump in ship.GetComponentsInChildren<PumpController>(true))
+            {
+                if (pump.crewTarget != station) continue;
+                if (pump.isContinuousType && PumpAnimatorField?.GetValue(pump) is Animator animator && animator != null &&
+                    animator.isActiveAndEnabled && !pump.isInteracting) animator.SetFloat("mult", 0f);
+                if (PumpAudioField?.GetValue(pump) is AudioSource sound && sound != null && sound.isPlaying) sound.Stop();
+            }
+        }
+
+        // The pumps this copy's crew works, one bit per pump in the ship's own order. A hand that is
+        // still walking to a pump that turns all the time is not at it yet: that pump's own
+        // animation says when the work began.
+        private int CrewPumps()
+        {
+            int mask = 0;
+            for (int i = 0; i < _crewPumps.Length && i < MaxPumpBits; i++)
+            {
+                PumpController pump = _crewPumps[i];
+                if (pump == null || !pump.isActiveAndEnabled || pump.crewTarget == null || !pump.crewTarget.interacting) continue;
+                Animator animator = _pumpAnimators[i];
+                if (pump.isContinuousType && animator != null && animator.isActiveAndEnabled && animator.GetFloat("mult") < 0.5f) continue;
+                mask |= 1 << i;
+            }
+            return mask;
+        }
+
+        // A guest's crew does not pump, so its pumps would stand still under the hands the host
+        // sent there. They are moved the way the game moves them — the turning of a pump that
+        // turns all the time, a stroke a second of the others — and nothing is taken out of the
+        // hull here: the water is the host's figure.
+        private void ShowCrewPumps()
+        {
+            float now = Time.time;
+            for (int i = 0; i < _crewPumps.Length && i < MaxPumpBits; i++)
+            {
+                PumpController pump = _crewPumps[i];
+                if (pump == null || !pump.isActiveAndEnabled) continue;
+                bool on = (s_hostPumps & (1 << i)) != 0 && !pump.isInteracting;
+                Animator animator = _pumpAnimators[i];
+                AudioSource sound = _pumpSounds[i];
+                if (pump.isContinuousType)
+                {
+                    if (on == _pumpShown[i]) continue;
+                    _pumpShown[i] = on;
+                    // In the local player's hand the pump is the game's own again.
+                    if (pump.isInteracting) continue;
+                    if (animator != null && animator.isActiveAndEnabled) animator.SetFloat("mult", on ? 1f : 0f);
+                    if (sound != null)
+                    {
+                        if (on && !sound.isPlaying) sound.Play();
+                        else if (!on && sound.isPlaying) sound.Stop();
+                    }
+                    continue;
+                }
+                if (!on || now < _pumpBeatAt[i]) continue;
+                _pumpBeatAt[i] = now + 1f;
+                string stroke = PumpPistonField != null && (bool)PumpPistonField.GetValue(pump) ? "Base Layer.pistonpump_pump"
+                    : PumpWheelField != null && (bool)PumpWheelField.GetValue(pump)
+                        ? (PumpJunkField != null && (bool)PumpJunkField.GetValue(pump) ? "Base Layer.junk_pump" : "Base Layer.chain_pump")
+                        : null;
+                if (stroke != null && animator != null && animator.isActiveAndEnabled) animator.Play(stroke, 0, 0f);
+                if (sound != null && !sound.isPlaying) sound.Play();
+            }
         }
 
         private void UnbindBoat()
@@ -60,8 +149,12 @@ namespace FollowingSeasCoop.Sync
             _rowboat = _crewHelm = null;
             _reelSlots = new Slot[0];
             _crewPumps = new PumpController[0];
+            _pumpShown = new bool[0];
+            _pumpBeatAt = new float[0];
+            _pumpAnimators = new Animator[0];
+            _pumpSounds = new AudioSource[0];
             HostCrewSteers = false;
-            HostCrewPumping = 0;
+            s_hostPumps = 0;
         }
 
         private Slot FindBoat(ControlKind kind, int index)
@@ -104,12 +197,12 @@ namespace FollowingSeasCoop.Sync
                         // No crew works on a guest's copy: it reads what the host said.
                         reading.A = HostCrewSteers ? 1f : 0f;
                         reading.B = s_hostCourse;
-                        reading.C = HostCrewPumping;
+                        reading.C = s_hostPumps;
                         return true;
                     }
                     reading.A = _ship.crewPiloting ? 1f : 0f;
                     reading.B = _ship.crewPiloting ? _ship.setCourseDeg : 0f;
-                    reading.C = PumpingCrew();
+                    reading.C = CrewPumps();
                     return true;
                 default:
                     return false;
@@ -150,7 +243,7 @@ namespace FollowingSeasCoop.Sync
                     if (!s_guest) return true;
                     HostCrewSteers = slot.A > 0.5f;
                     s_hostCourse = slot.B;
-                    HostCrewPumping = Mathf.Max(0, Mathf.RoundToInt(slot.C));
+                    s_hostPumps = Mathf.Clamp(Mathf.RoundToInt(slot.C), 0, (1 << MaxPumpBits) - 1);
                     // The game keeps the player's hand off a wheel the crew has.
                     if (_wheelController != null) _wheelController.crewUsing = HostCrewSteers;
                     return true;

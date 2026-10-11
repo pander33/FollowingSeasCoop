@@ -282,6 +282,7 @@ namespace FollowingSeasCoop.Runtime
                         {
                             Tasks.SendAll(Net.PlayerNetIdForPeer(from));
                             Hunt.SendAll(Net.PlayerNetIdForPeer(from));
+                            Crew.SendRoster(Net.PlayerNetIdForPeer(from));
                             // Its ship is the one of the save again: every control as it stands now.
                             Controls.MarkAllDirty();
                         }
@@ -296,6 +297,7 @@ namespace FollowingSeasCoop.Runtime
                     case MsgType.RowboatState: Rowboat.OnState((RowboatStateMsg)msg, from); break;
                     case MsgType.CrewOrder: Crew.OnOrder((CrewOrderMsg)msg, from); break;
                     case MsgType.CrewState: Crew.OnState((CrewStateMsg)msg); break;
+                    case MsgType.CrewRoster: Crew.OnRoster((CrewRosterMsg)msg, from); break;
                 }
             }
             catch (Exception e)
@@ -320,6 +322,7 @@ namespace FollowingSeasCoop.Runtime
                 Economy.SendAll(netId);
                 Tasks.SendAll(netId);
                 Hunt.SendAll(netId);
+                Crew.SendRoster(netId);
                 Notice = name + " joined";
                 Plugin.Log.LogInfo("[Coop] " + name + " is in the world");
             }

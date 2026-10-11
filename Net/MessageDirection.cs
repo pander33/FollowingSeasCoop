@@ -28,6 +28,7 @@ namespace FollowingSeasCoop.Net
                 case MsgType.PlayerState:
                 case MsgType.RowboatState:
                 case MsgType.CrewOrder:
+                case MsgType.CrewRoster:
                     return true;
                 default:
                     return false;
@@ -64,6 +65,7 @@ namespace FollowingSeasCoop.Net
                 case MsgType.PlayerState:
                 case MsgType.RowboatState:
                 case MsgType.CrewState:
+                case MsgType.CrewRoster:
                     return true;
                 default:
                     return false;

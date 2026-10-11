@@ -39,6 +39,7 @@ namespace FollowingSeasCoop.Net
         RowboatState = 29,
         CrewOrder = 30,
         CrewState = 31,
+        CrewRoster = 32,
     }
 
     public interface INetMessage
@@ -521,7 +522,7 @@ namespace FollowingSeasCoop.Net
         Rowboat = 15,
         /// <summary>The reel of a trolling line. Index = line pair, Text = where each hook is along the outer and the inner line.</summary>
         TrollLine = 16,
-        /// <summary>Host → clients only: the host's crew. A = 1 when it steers, B = the course, C = how many are at the pumps.</summary>
+        /// <summary>Host → clients only: the host's crew. A = 1 when it steers, B = the course, C = the pumps it works, one bit per pump of the ship.</summary>
         CrewHelm = 17,
     }
 

@@ -94,6 +94,45 @@ namespace FollowingSeasCoop.Net
         }
     }
 
+    /// <summary>
+    /// Who is in the ship's crew. Host → clients: the crew as it is. Client → host: the crew as
+    /// that player has just made it (a hand taken aboard, the crew changed at a dock); the host
+    /// makes its own the same and tells everybody.
+    /// </summary>
+    public sealed class CrewRosterMsg : INetMessage
+    {
+        public const int MaxAboard = 16, MaxOwned = 32, MaxLine = 96;
+        public MsgType Type => MsgType.CrewRoster;
+        public string ShipId = "";
+        /// <summary>The ids of the crew aboard, in the order of the ship's own list.</summary>
+        public string[] Aboard = Array.Empty<string>();
+        /// <summary>The game's own list of every crew member the players have: "id=ship id" or "id=NONE".</summary>
+        public string[] Owned = Array.Empty<string>();
+
+        public void Serialize(NetDataWriter w)
+        {
+            w.Put(ShipId ?? "", Limits.Text);
+            int aboard = Math.Min(Aboard?.Length ?? 0, MaxAboard), owned = Math.Min(Owned?.Length ?? 0, MaxOwned);
+            w.Put((byte)aboard);
+            for (int i = 0; i < aboard; i++) w.Put(Aboard[i] ?? "", Limits.Name);
+            w.Put((byte)owned);
+            for (int i = 0; i < owned; i++) w.Put(Owned[i] ?? "", MaxLine);
+        }
+
+        public void Deserialize(NetDataReader r)
+        {
+            ShipId = r.GetString(Limits.Text);
+            int aboard = r.GetByte();
+            if (aboard > MaxAboard) throw new InvalidDataException("Too many crew aboard");
+            Aboard = new string[aboard];
+            for (int i = 0; i < aboard; i++) Aboard[i] = r.GetString(Limits.Name);
+            int owned = r.GetByte();
+            if (owned > MaxOwned) throw new InvalidDataException("Too many crew owned");
+            Owned = new string[owned];
+            for (int i = 0; i < owned; i++) Owned[i] = r.GetString(MaxLine);
+        }
+    }
+
     /// <summary>One crew member as the host's copy shows it.</summary>
     public struct CrewPose
     {

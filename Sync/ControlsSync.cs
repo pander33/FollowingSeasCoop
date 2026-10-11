@@ -205,6 +205,7 @@ namespace FollowingSeasCoop.Sync
             s_guest = _net.IsClient;
             if (!Bind()) return;
             StepReefDrivers();
+            if (_net.IsClient) Guard(ShowCrewPumps);
 
             float now = Time.unscaledTime;
             if (now < _nextScanAt) return;
