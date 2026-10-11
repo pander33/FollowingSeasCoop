@@ -302,6 +302,7 @@ namespace FollowingSeasCoop.Sync
             if (controller != null) controller.ExternalStopInteractingAndUnlock();
             _inHand.Remove(item);
             Refused++;
+            CoopTrace.Note("Items", "hand opened", item.name, "held by " + holder);
             _notice = _net.GetPlayerName(holder) + " is carrying this";
         }
 
@@ -389,6 +390,7 @@ namespace FollowingSeasCoop.Sync
                         (r.Status == ItemStatus.Held && r.Holder != player && _net.HasMember(r.Holder)))
                     {
                         Refused++;
+                        CoopTrace.Note("Items", "refused", "#" + r.NetId, "take by " + player + ", held by " + r.Holder);
                         Answer(player, entry, msg.RequestId);
                         return;
                     }

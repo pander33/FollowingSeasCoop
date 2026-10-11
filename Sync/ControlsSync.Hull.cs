@@ -49,6 +49,9 @@ namespace FollowingSeasCoop.Sync
         private float _hooksUntil;
         private static bool s_warnedHull;
 
+        /// <summary>Diagnostics: the hooks of the ship's trolling lines, in the order they are shared by.</summary>
+        internal IReadOnlyList<FishPoint> Hooks => _hooks;
+
         private static bool HullReady =>
             LeakIntensityField != null && LeakRateField != null && LeakFlowField != null && LeakMaxFlowField != null &&
             LeakStartIntensityField != null && LeakStartRateField != null && LeakStartFlowField != null &&

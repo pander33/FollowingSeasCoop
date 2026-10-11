@@ -98,6 +98,7 @@ namespace FollowingSeasCoop.Runtime
                     DrawBanner("Receiving the host's world " + Mathf.RoundToInt(World.ReceiveProgress * 100f) + "%");
 
                 if (Plugin.ShowStatus.Value && Net != null && Net.Role != Role.None) DrawStatus();
+                if (Plugin.ShowStatus.Value) DrawProblemLine();
                 if (_menuOpen) _menuRect = GUILayout.Window(0x46534350, _menuRect, DrawMenu, Plugin.Name + " " + Plugin.Version);
             }
             catch (Exception e)
@@ -118,6 +119,7 @@ namespace FollowingSeasCoop.Runtime
             string line = role + "  " + Net.State;
             if (Net.IsClient) line += "  world " + World.State + "  rtt " + Net.RttMs.ToString("F0") + " ms";
             line += "  players " + Net.RosterSnapshot.Length;
+            if (Net.LagMs > 0 || Net.JitterMs > 0) line += "  LAG " + Net.LagMs + "+" + Net.JitterMs + " ms (Dev/LagMs)";
             GUI.Label(new Rect(10f, Screen.height - 26f, 700f, 22f), "Co-op: " + line);
         }
 
@@ -216,6 +218,9 @@ namespace FollowingSeasCoop.Runtime
             if (GUILayout.Button("Dump items")) DumpItems();
             GUI.enabled = true;
             if (!string.IsNullOrEmpty(_itemsNotice)) GUILayout.Label(_itemsNotice);
+            DrawDev();
+            DrawProblems();
+            DrawTrace();
             GUILayout.Label("Patches: " + PatchHealth.Details);
             GUILayout.Label("Protocol " + Protocol.Version + "   NetId " + Net.MyNetId + "   world " + World.State);
             GUILayout.Label("Scene: " + (GameAccess.InWorld ? "world" : GameAccess.AtMainMenu ? "title screen" : "other"));

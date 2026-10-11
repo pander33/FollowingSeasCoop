@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Checks the wire layer without the game: every message there and back, cut packets, noise.
+    Compiles the mod's own Net/ sources (they have no Unity or game reference), so nothing here
+    is a copy. Not part of the plugin and not in the solution. See README.md next to this file.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>ProtocolSmoke</AssemblyName>
+    <RootNamespace>FollowingSeasCoop.ProtocolSmoke</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Configuration Condition="'$(Configuration)'==''">Release</Configuration>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\Net\*.cs" LinkBase="Net" />
+    <Reference Include="LiteNetLib"><HintPath>..\..\libs\LiteNetLib.dll</HintPath><Private>true</Private></Reference>
+  </ItemGroup>
+
+</Project>

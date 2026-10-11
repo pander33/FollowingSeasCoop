@@ -117,6 +117,21 @@ namespace FollowingSeasCoop.Sync
                 point = (wheel != null ? wheel.transform.position : ship.transform.position + Vector3.up * 2f) + Vector3.up * 1.5f;
             }
 
+            Move(player, point);
+
+            UnderwaterField?.SetValue(player, 0f);
+            // What the game does when a player surfaces in time: the fade runs backwards.
+            if (DeathScreenField?.GetValue(player) is GameObject screen && screen.activeSelf)
+            {
+                Fade fade = screen.GetComponent<Fade>();
+                if (fade != null) fade.Reset();
+            }
+            Rescues++;
+        }
+
+        /// <summary>Puts the local player at a point of the scene, the way the game's own ladders do.</summary>
+        internal static void Move(PlayerHandler player, Vector3 point)
+        {
             Rigidbody body = player.GetRigidbody();
             PlayerCloneController clone = player.playerClone;
             if (clone != null && clone.gameObject.activeSelf)
@@ -136,15 +151,6 @@ namespace FollowingSeasCoop.Sync
                 body.position = point;
             }
             Physics.SyncTransforms();
-
-            UnderwaterField?.SetValue(player, 0f);
-            // What the game does when a player surfaces in time: the fade runs backwards.
-            if (DeathScreenField?.GetValue(player) is GameObject screen && screen.activeSelf)
-            {
-                Fade fade = screen.GetComponent<Fade>();
-                if (fade != null) fade.Reset();
-            }
-            Rescues++;
         }
 
         public void Clear()

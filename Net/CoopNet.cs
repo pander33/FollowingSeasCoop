@@ -95,6 +95,33 @@ namespace FollowingSeasCoop.Net
         public event Action<string> OnLinkLost;
         public event Action OnRosterChanged;
 
+        /// <summary>
+        /// Diagnostics: every gameplay message that leaves or arrives. (sent, type, message, the
+        /// other player's NetId — 0 for a broadcast.) Must not throw.
+        /// </summary>
+        public Action<bool, MsgType, INetMessage, uint> Tap;
+
+        /// <summary>
+        /// Development: hold every arriving message this long before it is acted on, plus up to
+        /// <see cref="JitterMs"/> more. Two copies on one machine have no delay of their own, so
+        /// mistakes of ordering never show without it. The order of messages is kept.
+        /// </summary>
+        public int LagMs;
+        public int JitterMs;
+
+        private struct Held
+        {
+            public long Due;
+            public NetPeer Peer;
+            public MsgType Type;
+            public INetMessage Msg;
+        }
+
+        private readonly Queue<Held> _held = new Queue<Held>();
+        private long _lastDue;
+        private readonly Random _jitter = new Random();
+        public int HeldCount => _held.Count;
+
         public CoopNet(Action<string> log)
         {
             _log = log ?? (_ => { });
@@ -231,6 +258,8 @@ namespace FollowingSeasCoop.Net
                 _net = null;
             }
             _sessions.Clear();
+            _held.Clear();
+            _lastDue = 0;
             _hostPeer = null;
             _roster = new SessionMemberInfo[0];
             _rosterRevision = 0;
@@ -280,6 +309,12 @@ namespace FollowingSeasCoop.Net
             if (_net == null) return;
             _net.PollEvents();
             if (_net == null) return;   // a callback ended the session
+            while (_held.Count > 0 && _held.Peek().Due <= Clock.LocalTick)
+            {
+                Held held = _held.Dequeue();
+                Dispatch(held.Peer, held.Type, held.Msg);
+                if (_net == null) return;
+            }
 
             // The client drives TimeSync at ~3 Hz once connected.
             if (Role == Role.Client && _hostPeer != null && State == LinkState.Connected)
@@ -301,7 +336,10 @@ namespace FollowingSeasCoop.Net
         public void SendToHost(INetMessage msg, DeliveryMethod method)
         {
             if (Role == Role.Client && _hostPeer != null && State == LinkState.Connected)
+            {
                 _hostPeer.Send(msg, method);
+                Tap?.Invoke(true, msg.Type, msg, NetRegistry.HostPlayerNetId);
+            }
         }
 
         /// <summary>Host: send to one player.</summary>
@@ -309,7 +347,9 @@ namespace FollowingSeasCoop.Net
         {
             if (Role != Role.Host) return;
             var session = SessionOf(netId);
-            if (session != null && session.Peer != null) session.Peer.Send(msg, method);
+            if (session == null || session.Peer == null) return;
+            session.Peer.Send(msg, method);
+            Tap?.Invoke(true, msg.Type, msg, netId);
         }
 
         /// <summary>Host: send to every client that finished the handshake.</summary>
@@ -318,13 +358,16 @@ namespace FollowingSeasCoop.Net
         public void Broadcast(INetMessage msg, DeliveryMethod method, bool readyOnly = true, uint exceptNetId = 0)
         {
             if (Role != Role.Host) return;
+            bool any = false;
             foreach (var session in _sessions.Values)
             {
                 if (!session.HandshakeDone || session.Peer == null) continue;
                 if (readyOnly && session.JoinState != MemberJoinState.Ready) continue;
                 if (exceptNetId != 0 && session.PlayerNetId == exceptNetId) continue;
                 session.Peer.Send(msg, method);
+                any = true;
             }
+            if (any) Tap?.Invoke(true, msg.Type, msg, 0u);
         }
 
         // -----------------------------------------------------------------
@@ -438,6 +481,16 @@ namespace FollowingSeasCoop.Net
             INetMessage msg = Protocol.Read(reader, out MsgType type);
             if (msg == null) return;
 
+            if (LagMs <= 0 && JitterMs <= 0 && _held.Count == 0) { Dispatch(peer, type, msg); return; }
+            // Never before the message that arrived ahead of it: reliable channels promise an order.
+            long due = Clock.LocalTick + Math.Max(0, LagMs) + (JitterMs > 0 ? _jitter.Next(JitterMs + 1) : 0);
+            if (due < _lastDue) due = _lastDue;
+            _lastDue = due;
+            _held.Enqueue(new Held { Due = due, Peer = peer, Type = type, Msg = msg });
+        }
+
+        private void Dispatch(NetPeer peer, MsgType type, INetMessage msg)
+        {
             if (Role == Role.Host)
             {
                 if (!MessageDirection.FromClient(type)) { WrongSide(type); return; }
@@ -452,6 +505,7 @@ namespace FollowingSeasCoop.Net
                                   DeliveryMethod.Unreliable);
                     return;
                 }
+                Tap?.Invoke(false, type, msg, session.PlayerNetId);
                 OnGameMessage?.Invoke(type, msg, peer);
                 return;
             }
@@ -485,6 +539,7 @@ namespace FollowingSeasCoop.Net
                     return;
             }
             if (State != LinkState.Connected) return;
+            Tap?.Invoke(false, type, msg, NetRegistry.HostPlayerNetId);
             OnGameMessage?.Invoke(type, msg, peer);
         }
 

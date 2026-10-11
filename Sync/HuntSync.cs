@@ -212,6 +212,15 @@ namespace FollowingSeasCoop.Sync
             finally { s_applying = false; }
         }
 
+        /// <summary>Diagnostics: what became of animals, as this copy knows it.</summary>
+        public void Dump(StateDump d)
+        {
+            d.Line("Hunt", "animals shot or harvested", _state.Count.ToString());
+            foreach (AnimalEntry entry in _state.Values)
+                d.Line("Hunt", "animal " + entry.Key, entry.Status + " at " + StateDump.F(entry.X) + " " + StateDump.F(entry.Y) + " " + StateDump.F(entry.Z), 0.5f);
+            d.Info("Hunt", "animals loaded here", _animals.Count(pair => pair.Value != null).ToString());
+        }
+
         public string Describe()
         {
             if (PatchHealth.StateOf("Hunt") != PatchHealthState.Ok) return "off: the Hunt patches failed";

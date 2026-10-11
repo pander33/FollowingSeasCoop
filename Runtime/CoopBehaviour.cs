@@ -67,6 +67,7 @@ namespace FollowingSeasCoop.Runtime
             Net.OnLinkLost += ClientOnLinkLost;
             Net.OnGameMessage += OnGameMessage;
             World.OnGuestAbort += reason => EndClientSession(reason);
+            InitDev();
 
             _harmony = new Harmony(Plugin.Guid);
             Action<string> log = message => Plugin.Log.LogError(message);
@@ -311,6 +312,11 @@ namespace FollowingSeasCoop.Runtime
             {
                 TickMenuKey();
                 Net.PollEvents();
+                try { TickDev(); }
+                catch (Exception e)
+                {
+                    if (_updateErrors++ < 20) Plugin.Log.LogError("[Dev] Tick failed: " + e);
+                }
 
                 // The host left its world through the game's menu: there is nothing left to host.
                 if (Net.IsHost && !GameAccess.InWorld)

@@ -364,6 +364,28 @@ namespace FollowingSeasCoop.Sync
             _products[(int)msg.Kind] = Numbers(product);
         }
 
+        /// <summary>Diagnostics: the contracts as this copy's game holds them right now.</summary>
+        public void Dump(StateDump d)
+        {
+            TaskPanelHandler panel = Usable ? Panel() : null;
+            if (panel == null) { d.Info("Tasks", "panel", "not there"); return; }
+            int count = 0;
+            foreach (GameObject obj in panel.acceptedTaskObjects)
+            {
+                TaskHandler task = obj != null ? obj.GetComponent<TaskHandler>() : null;
+                if (task == null || task.isProductType) continue;
+                count++;
+                d.Line("Tasks", "contract " + task.id, Numbers(task));
+            }
+            d.Line("Tasks", "contracts", count.ToString());
+            for (int k = 1; k < _products.Length; k++)
+            {
+                TaskHandler product = Product(panel, (TaskKind)k);
+                d.Line("Tasks", ((TaskKind)k).ToString(), product != null ? Numbers(product) : "none");
+            }
+            d.Info("Tasks", "waiting for the panel", _waiting.Count.ToString());
+        }
+
         public string Describe()
         {
             if (!Usable) return "off: the game's task panel was not found";

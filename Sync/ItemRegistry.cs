@@ -288,6 +288,34 @@ namespace FollowingSeasCoop.Sync
             Changed(entry, before);
         }
 
+        /// <summary>Diagnostics: every thing somebody has touched, and where it is on this copy.</summary>
+        public void Dump(StateDump d)
+        {
+            int untouched = 0, touched = 0;
+            foreach (Entry entry in _ids.Values)
+            {
+                ItemRecord r = entry.Record;
+                if (r.Kind != ItemKind.Portable) continue;
+                if (r.Status != ItemStatus.Deleted && (r.Flags & ItemFlags.Touched) == 0) { untouched++; continue; }
+                touched++;
+                string name = "thing #" + r.NetId + " " + r.Key;
+                if (r.Status == ItemStatus.Deleted) { d.Line("Items", name, "gone"); continue; }
+                d.Line("Items", name, r.Status + " holder " + r.Holder + " mover " + r.Leader +
+                       ((r.Flags & ItemFlags.Settled) != 0 ? " at rest" : " moving"));
+                // A thing of an island this copy has not loaded has a record and no object.
+                if (entry.Object == null) { d.Info("Items", name + " object", "none on this copy"); continue; }
+                // A thing in a hand or on its way is drawn a moment behind on the copies that follow it.
+                if (r.Status != ItemStatus.Free || (r.Flags & ItemFlags.Settled) == 0 || !(entry.Object is ObjectInteractionHandler item))
+                    continue;
+                ItemPose p = PoseOf(item);
+                d.Line("Items", name + " place", (string.IsNullOrEmpty(p.ShipId) ? "world" : "aboard " + p.ShipId) + " " +
+                       StateDump.F(p.X) + " " + StateDump.F(p.Y) + " " + StateDump.F(p.Z), 0.1f);
+            }
+            d.Line("Items", "touched", touched.ToString());
+            d.Info("Items", "untouched records", untouched.ToString());
+            d.Info("Items", "registry", Describe());
+        }
+
         public string Describe()
         {
             if (PatchHealth.StateOf("Item catalog") != PatchHealthState.Ok) return "off: the Item catalog patch failed";

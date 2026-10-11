@@ -244,7 +244,7 @@ namespace FollowingSeasCoop.Sync
                 // A guest that just let go takes what arrived meanwhile; a state that could not be
                 // applied is tried again. Nothing is reported about a control in that condition.
                 if (local && _net.IsClient) { /* still in hand: keep reporting below */ }
-                else { Flush(slot); return; }
+                else { Flush(slot, true); return; }
             }
 
             if (_net.IsHost)
@@ -389,6 +389,7 @@ namespace FollowingSeasCoop.Sync
         private void Refuse(Slot slot, uint sender, uint holder)
         {
             Refused++;
+            CoopTrace.Note("Controls", "refused", Name(slot), "report of " + sender + ", in the hand of " + holder);
             if (!slot.Known) return;
             var state = new ControlStateMsg();
             Fill(state, slot, holder);
@@ -401,29 +402,52 @@ namespace FollowingSeasCoop.Sync
             slot.HasPending = true;
             slot.Tries = 0;
             // What is in the local hand stays the local player's until it is let go.
-            if (now - slot.HeldAt < HoldGrace) return;
+            if (now - slot.HeldAt < HoldGrace)
+            {
+                if (Traced(slot.Kind)) CoopTrace.Note("Controls", "waits", Name(slot), "in the local hand");
+                return;
+            }
             Flush(slot);
         }
 
-        private void Flush(Slot slot)
+        private void Flush(Slot slot, bool waited = false)
         {
             Store(slot, slot.Pending);
             slot.Known = true;
             bool done = true;   // a state that throws is dropped, not retried
             Guard(() => done = Apply(slot));
-            if (!done && ++slot.Tries < MaxApplyTries) return;
+            if (!done && ++slot.Tries < MaxApplyTries)
+            {
+                if (slot.Tries == 1) CoopTrace.Note("Controls", "not yet", Name(slot), "will be tried again");
+                return;
+            }
             slot.HasPending = false;
             if (!done)
             {
                 // It never became possible here. The host tells everyone what it has instead.
                 if (_net.IsHost) slot.Dirty = true;
+                if (_errors++ < 10) Plugin.Log.LogWarning("[Controls] The state of " + Name(slot) + " could not be put into this world");
             }
-            else Applied++;
+            else
+            {
+                Applied++;
+                // Applied the moment it came is what "got" already says.
+                if (waited && Traced(slot.Kind)) CoopTrace.Note("Controls", "applied", Name(slot), Show(slot));
+            }
             // Where a guest reports its own changes, a state that did not take here must not look
             // like one: the note of where things stand is what the control actually reads.
             if (GuestSpeaksOnChange(slot.Kind))
                 Guard(() => { if (Read(slot, out Reading actual, out _)) Store(slot, actual); });
         }
+
+        private static string Name(Slot slot) => slot.Kind + "#" + slot.Index;
+
+        private static string Show(Slot slot) =>
+            slot.A.ToString("0.###") + " " + slot.B.ToString("0.###") + " " + slot.C.ToString("0.###") +
+            (string.IsNullOrEmpty(slot.Text) ? "" : " '" + slot.Text + "'");
+
+        // The wheel while it is turned and the hull's water arrive many times a second.
+        private static bool Traced(ControlKind kind) => kind != ControlKind.Steering && kind != ControlKind.Water;
 
         private Slot Find(ControlKind kind, int index)
         {
@@ -709,6 +733,27 @@ namespace FollowingSeasCoop.Sync
         {
             return "steering " + (_steer != null ? "yes" : "no") + ", masts " + _reefs.Length + ", ropes " + _ropeSlots.Length +
                    CountsDeck() + CountsHull();
+        }
+
+        /// <summary>Diagnostics: what every control reads on this copy right now.</summary>
+        public void Dump(StateDump d)
+        {
+            if (_ship == null) { d.Info("Controls", "ship", "not bound"); return; }
+            d.Line("Controls", "ship", _ship.id ?? "");
+            foreach (Slot slot in _all)
+            {
+                Slot s = slot;
+                Reading reading = default;
+                bool read = false;
+                Guard(() => { read = Read(s, out Reading now, out _); reading = now; });
+                if (!read) { d.Line("Controls", Name(s), "cannot be read"); continue; }
+                string text = s.Kind == ControlKind.Rope ? Tail(reading.Text) : reading.Text ?? "";
+                // The wheel swings on its spring and the water rises between two looks.
+                float tolerance = s.Kind == ControlKind.Steering ? 3f : s.Kind == ControlKind.Water ? 100f : 0.05f;
+                d.Line("Controls", Name(s), StateDump.F(reading.A) + " " + StateDump.F(reading.B) + " " + StateDump.F(reading.C) +
+                       (text.Length > 0 ? " '" + text + "'" : ""), tolerance);
+                if (s.HasPending) d.Info("Controls", Name(s) + " waits", "a state that is not applied yet, tries " + s.Tries);
+            }
         }
 
         public string Describe()

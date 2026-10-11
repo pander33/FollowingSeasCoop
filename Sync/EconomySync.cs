@@ -316,6 +316,16 @@ namespace FollowingSeasCoop.Sync
                     _net.SendTo(player, RecordMsg(id, weight), DeliveryMethod.ReliableOrdered);
         }
 
+        /// <summary>
+        /// Guest: asks the host for the household again, and with it the contracts, the animals and
+        /// every control (the host answers a resync with all of them).
+        /// </summary>
+        public void AskAgain()
+        {
+            if (!_net.IsClient || _dp == null) return;
+            _net.SendToHost(new EconomyDeltaMsg { Seq = ++_seq, Resync = true }, DeliveryMethod.ReliableOrdered);
+        }
+
         public void OnDelta(EconomyDeltaMsg msg, NetPeer from)
         {
             DataPersistenceManager dp = GameAccess.Dp;
@@ -444,6 +454,35 @@ namespace FollowingSeasCoop.Sync
             _records[id] = line;
             if (_net.IsHost)
                 _net.Broadcast(msg, DeliveryMethod.ReliableOrdered, readyOnly: true, exceptNetId: _net.PlayerNetIdForPeer(from));
+        }
+
+        /// <summary>Diagnostics: the household as this copy's game holds it right now.</summary>
+        public void Dump(StateDump d)
+        {
+            DataPersistenceManager dp = GameAccess.Dp;
+            if (dp == null || dp.gameData == null) { d.Info("Household", "world", "none"); return; }
+            GameData data = dp.gameData;
+            d.Line("Household", "money", StateDump.F(data.tearCount), 0.01f);
+            ProvisionsController c = Controller();
+            if (c != null)
+            {
+                var stores = new float[EconomyWire.Stores];
+                Read(c, stores);
+                string[] names = { "food", "drink", "oakum", "timber", "canvas", "oil", "aburae" };
+                for (int i = 0; i < stores.Length; i++) d.Line("Household", "store " + names[i], StateDump.F(stores[i]), 0.05f);
+            }
+            else d.Line("Household", "stores", "no ship");
+            FishCargoManager hold = FishHold();
+            d.Line("Household", "fish in the hold", hold != null ? hold.currentFishCount.ToString() : "no hold");
+            var debts = new List<string>(data.debts ?? new List<string>());
+            debts.Sort(StringComparer.Ordinal);
+            d.Line("Household", "debts", debts.Count.ToString());
+            for (int i = 0; i < debts.Count; i++) d.Line("Household", "debt " + i, debts[i]);
+            if (data.fishRecords != null)
+                foreach (string line in data.fishRecords)
+                    if (ParseRecord(line, out string id, out float weight)) d.Line("Household", "record " + id, StateDump.F(weight), 0.01f);
+            d.Line("Household", "journal lines", (data.logs != null ? data.logs.Count : 0).ToString());
+            d.Info("Household", "differences not counted by the host yet", _pending.Count.ToString());
         }
 
         public string Describe()

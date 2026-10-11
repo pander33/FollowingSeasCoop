@@ -49,6 +49,15 @@ namespace FollowingSeasCoop.Sync
 
         public PlayerSync(CoopNet net) { _net = net; }
 
+        /// <summary>Where another player's avatar stands in this copy's scene; false when it has none.</summary>
+        public bool AvatarAt(uint netId, out Vector3 position)
+        {
+            position = default;
+            if (!_remotes.TryGetValue(netId, out Remote remote) || remote.Avatar == null) return false;
+            position = remote.Avatar.transform.position;
+            return true;
+        }
+
         // -----------------------------------------------------------------
         // Local player → wire
         // -----------------------------------------------------------------

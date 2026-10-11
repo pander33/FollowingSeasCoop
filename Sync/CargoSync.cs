@@ -83,6 +83,20 @@ namespace FollowingSeasCoop.Sync
             s_blocked = false;
         }
 
+        /// <summary>Guest: asks the host for the whole hold again.</summary>
+        public void AskAgain()
+        {
+            if (!_net.IsClient) return;
+            _synced = false;
+            _askAt = 0f;
+        }
+
+        /// <summary>Host: sends a guest the whole hold.</summary>
+        public void SendAll(uint player)
+        {
+            if (_net.IsHost && Usable && _ship != null) SendState(player);
+        }
+
         /// <summary>What the player should be told, once.</summary>
         public string PopNotice()
         {
@@ -401,7 +415,11 @@ namespace FollowingSeasCoop.Sync
             {
                 Outcome outcome = Apply(op);
                 if (outcome == Outcome.Done) done.Add(op);
-                else if (outcome == Outcome.Failed) failed = true;
+                else if (outcome == Outcome.Failed)
+                {
+                    failed = true;
+                    CoopTrace.Note("Cargo", "not done", op.Kind + " box " + op.Crate.Box, op.Crate.CargoId + " from " + player);
+                }
             }
             if (done.Count > 0) { _massFrame = Time.frameCount; Applied++; }
             if (failed) Failed++;
@@ -477,6 +495,7 @@ namespace FollowingSeasCoop.Sync
             {
                 open.SetInteracting(false);
                 _notice = _net.GetPlayerName(_holder) + " is loading cargo";
+                CoopTrace.Note("Cargo", "panel closed", "panel", "held by " + _holder);
                 mine = false;
             }
             if (_net.IsHost)
@@ -535,6 +554,22 @@ namespace FollowingSeasCoop.Sync
         public void RemovePlayer(uint player)
         {
             if (_net.IsHost && _holder == player) SetHolder(0);
+        }
+
+        /// <summary>Diagnostics: the crates of the hold as they stand on this copy right now.</summary>
+        public void Dump(StateDump d)
+        {
+            if (!Usable || _ship == null) { d.Info("Cargo", "ship", "not bound"); return; }
+            // The scratch list: the next poll scans anew before it compares.
+            Scan();
+            d.Line("Cargo", "crates", _scan.Count.ToString());
+            foreach (Crate crate in _scan.Values)
+            {
+                CargoCrate w = crate.Wire;
+                d.Line("Cargo", "box " + w.Box + " cell " + Half(w.X) + "," + Half(w.Y) + "," + Half(w.Z), w.CargoId + " | " + w.TaskId);
+            }
+            d.Info("Cargo", "panel", _holder != 0 ? "held by " + _holder : "free");
+            if (_net.IsClient) d.Info("Cargo", "host's hold", _synced ? "received" : "not received yet");
         }
 
         public string Describe()

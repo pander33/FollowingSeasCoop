@@ -58,3 +58,6 @@ The host's game pauses while a guest loads.
 ```bash
 dotnet build FollowingSeasCoop.csproj -c Release -p:GameDir="<game folder with BepInEx>"
 ```
+
+Debugging tools (a protocol check that needs no game, a trace, a comparison of two copies, a
+script that starts a host and a guest side by side) are described in [`Tools/README.md`](Tools/README.md).
