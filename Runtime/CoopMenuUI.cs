@@ -7,16 +7,15 @@ using UnityEngine.InputSystem;
 namespace FollowingSeasCoop.Runtime
 {
     /// <summary>
-    /// The F8 co-op menu and the status overlay (IMGUI). The game reads input through the new Input
+    /// The F8 debug window and the status overlay (IMGUI). The player's own menu is <see cref="CoopGameUI"/>. The game reads input through the new Input
     /// System only — <c>UnityEngine.Input</c> throws here — so the hotkey comes from
     /// <c>Keyboard.current</c>.
     /// </summary>
     public sealed partial class CoopBehaviour
     {
         private bool _menuOpen;
+        private Vector2 _debugScroll;
         private Rect _menuRect = new Rect(40f, 40f, 380f, 0f);
-        private string _ipField;
-        private string _nameField;
         private Key _menuKey = Key.F8;
         private bool _menuKeyParsed;
 
@@ -48,18 +47,25 @@ namespace FollowingSeasCoop.Runtime
         {
             if (_menuOpen == open) return;
             _menuOpen = open;
-            if (open)
-            {
-                _ipField = Plugin.JoinIp.Value;
-                _nameField = Plugin.PlayerName.Value;
-                return;
-            }
+            if (open) return;
             // Give the mouse back to the game the way it was.
             if (_tookCursor)
             {
                 _tookCursor = false;
-                Cursor.lockState = _cursorLockBefore;
-                Cursor.visible = _cursorVisibleBefore;
+                Cursor.lockState = CoopGameUI.GameMenuOpen || CoopGameUI.Open ? CursorLockMode.None : _cursorLockBefore;
+                Cursor.visible = CoopGameUI.GameMenuOpen || CoopGameUI.Open || _cursorVisibleBefore;
+            }
+            else if (GameAccess.InWorld)
+            {
+                bool uiOpen = CoopGameUI.GameMenuOpen || CoopGameUI.Open;
+                var controller = InteractionController.interactionInstance;
+                if (controller != null)
+                {
+                    var menus = controller.FindAllUIMenus();
+                    uiOpen |= menus != null && menus.Count > 0;
+                }
+                Cursor.lockState = uiOpen ? CursorLockMode.None : CursorLockMode.Locked;
+                Cursor.visible = uiOpen;
             }
             InputBlock.Set(InputBlock.Reason.Menu, false);
         }
@@ -71,6 +77,7 @@ namespace FollowingSeasCoop.Runtime
         private void HoldCursor()
         {
             if (!_menuOpen) return;
+            InputBlock.Set(InputBlock.Reason.Menu, true);
             if (!_tookCursor && Cursor.lockState == CursorLockMode.Locked)
             {
                 _tookCursor = true;
@@ -94,12 +101,12 @@ namespace FollowingSeasCoop.Runtime
                 else if (Controls != null && Controls.Contested)
                     DrawBanner(Net.GetPlayerName(Controls.ContestedBy) + " is working this control");
                 else if (Time.unscaledTime < _flashUntil) DrawBanner(_flash);
-                else if (World != null && World.State == GuestWorldState.Receiving)
+                else if (World != null && World.State == GuestWorldState.Receiving && !CoopGameUI.Open)
                     DrawBanner("Receiving the host's world " + Mathf.RoundToInt(World.ReceiveProgress * 100f) + "%");
 
                 if (Plugin.ShowStatus.Value && Net != null && Net.Role != Role.None) DrawStatus();
                 if (Plugin.ShowStatus.Value) DrawProblemLine();
-                if (_menuOpen) _menuRect = GUILayout.Window(0x46534350, _menuRect, DrawMenu, Plugin.Name + " " + Plugin.Version);
+                if (_menuOpen) _menuRect = GUILayout.Window(0x46534350, _menuRect, DrawMenu, Plugin.Name + " Debug " + Plugin.Version);
             }
             catch (Exception e)
             {
@@ -127,73 +134,41 @@ namespace FollowingSeasCoop.Runtime
         {
             GUILayout.Label("Status: " + StatusLine());
             if (!string.IsNullOrEmpty(Notice)) GUILayout.Label(Notice);
-            GUILayout.Space(6f);
-
-            if (Net.Role == Role.None)
-            {
-                GUILayout.BeginHorizontal();
-                GUILayout.Label("Name", GUILayout.Width(60f));
-                string name = GUILayout.TextField(_nameField ?? "", Limits.Name);
-                if (name != _nameField) { _nameField = name; Plugin.PlayerName.Value = name; }
-                GUILayout.EndHorizontal();
-
-                string hostBlocker = HostBlocker();
-                GUI.enabled = hostBlocker == null;
-                if (GUILayout.Button("Host this world")) Host();
-                GUI.enabled = true;
-                if (hostBlocker != null) GUILayout.Label("  " + hostBlocker);
-
-                GUILayout.Space(6f);
-                GUILayout.BeginHorizontal();
-                GUILayout.Label("Host IP", GUILayout.Width(60f));
-                string ip = GUILayout.TextField(_ipField ?? "", 64);
-                if (ip != _ipField) { _ipField = ip; Plugin.JoinIp.Value = ip; }
-                GUILayout.EndHorizontal();
-
-                string joinBlocker = JoinBlocker();
-                GUI.enabled = joinBlocker == null;
-                if (GUILayout.Button("Join")) Join(_ipField);
-                GUI.enabled = true;
-                if (joinBlocker != null) GUILayout.Label("  " + joinBlocker);
-            }
-            else
-            {
-                GUILayout.Label("Players:");
-                foreach (SessionMemberInfo member in Net.RosterSnapshot)
-                {
-                    string row = "  " + member.Name + (member.IsHost ? " (host)" : "") +
-                                 (member.State == MemberJoinState.Ready ? "" : "  - " + member.State.ToString().ToLowerInvariant());
-                    if (member.NetId == Net.MyNetId) row += "  <- you";
-                    GUILayout.Label(row);
-                }
-                if (Participating)
-                {
-                    // For a player left behind in the water: the ship does not wait.
-                    string rescueBlocker = Rescue.Blocker();
-                    GUI.enabled = rescueBlocker == null;
-                    if (GUILayout.Button("Return to the ship")) Flash(Rescue.ReturnToShip());
-                    GUI.enabled = true;
-                    if (rescueBlocker != null) GUILayout.Label("  " + rescueBlocker);
-                }
-                GUILayout.Space(6f);
-                if (GUILayout.Button(Net.IsHost ? "Stop hosting" : "Disconnect")) Disconnect();
-            }
-
+            if (CoopGameUI.Broken) DrawSessionFallback();
             GUILayout.Space(6f);
             bool show = GUILayout.Toggle(Plugin.ShowStatus.Value, " Show status line");
             if (show != Plugin.ShowStatus.Value) Plugin.ShowStatus.Value = show;
-            if (GUILayout.Button(_debugOpen ? "Debug  [-]" : "Debug  [+]"))
-            {
-                _debugOpen = !_debugOpen;
-                _menuRect.height = 0f;   // a layout window grows by itself but never shrinks
-            }
-            if (_debugOpen) DrawDebug();
+            _debugScroll = GUILayout.BeginScrollView(_debugScroll, GUILayout.Height(Mathf.Max(180f, Screen.height - 230f)));
+            DrawDebug();
+            GUILayout.EndScrollView();
 
             if (GUILayout.Button("Close (" + _menuKey + ")")) SetMenuOpen(false);
             GUI.DragWindow(new Rect(0f, 0f, 10000f, 22f));
         }
 
-        private bool _debugOpen;
+        private string _fallbackAddress;
+
+        // Only when the game-style menu could not be shown: without this there would be no way to play.
+        private void DrawSessionFallback()
+        {
+            GUILayout.Label("The co-op menu failed (see the log). Session:");
+            if (Net.Role != Role.None)
+            {
+                if (GUILayout.Button(Net.IsHost ? "Stop hosting" : "Leave session")) Disconnect();
+                return;
+            }
+            string hostBlocker = HostBlocker();
+            GUI.enabled = hostBlocker == null;
+            if (GUILayout.Button("Host this world")) Host();
+            GUI.enabled = true;
+            GUILayout.BeginHorizontal();
+            _fallbackAddress = GUILayout.TextField(_fallbackAddress ?? Plugin.JoinIp.Value, 128);
+            GUI.enabled = JoinBlocker() == null;
+            if (GUILayout.Button("Join", GUILayout.Width(70f))) { Plugin.JoinIp.Value = _fallbackAddress; Join(_fallbackAddress); }
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+        }
+
         private string _saveName = "CoopSave";
         private string _saveNotice = "";
         private string _itemsNotice = "";

@@ -47,9 +47,17 @@ Everyone needs the same version of the mod and of the game.
 
 ## Play
 
-- **Host:** load your world, press **F8**, choose **Host this world**.
-- **Guest:** stay on the title screen, press **F8**, enter the host's IP, choose **Join**.
-- **Disconnect** in the same menu returns a guest to the title screen.
+- **Host:** load your world, press **Esc**, choose **Co-op**, then **Host this world**. The page
+  then shows the address to give your friends (with **Copy**) and who is aboard. Your name, the
+  number of guests and the UDP port are set on the same page before hosting.
+- **Guest:** choose **Co-op** on the title screen, type the host's address, choose **Join**. An
+  address may carry a port (`192.168.0.40:7777`); without one the configured port is used.
+- On the same network the address shown to the host is enough. Over the internet the guest needs
+  the host's public address, and the host's router must forward the UDP port to the host's PC.
+- **Leave the crew** (Esc, Co-op) returns a guest to the title screen; **Stop hosting** keeps the
+  host's world loaded. Both ask once before they do it.
+- A guest's game does not pause under its Esc menu: the world is the host's.
+- **F8** opens the debug window (diagnostics, state dumps, trace, development tools).
 
 The host's game pauses while a guest loads.
 

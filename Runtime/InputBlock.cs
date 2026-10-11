@@ -6,7 +6,7 @@ namespace FollowingSeasCoop.Runtime
 {
     /// <summary>
     /// Takes the game's input away from the local player while something of the mod needs it: the
-    /// open co-op menu, or the host's pause on a guest. Several reasons can hold it at once; the
+    /// open debug window, the game's menu on a guest, or the host's pause on a guest. Several reasons can hold it at once; the
     /// game gets its input back when the last one lets go.
     ///
     /// <c>InteractionController.blockInput</c> stops that controller's whole LateUpdate (camera and
@@ -23,6 +23,7 @@ namespace FollowingSeasCoop.Runtime
             None = 0,
             Menu = 1,
             HostPause = 2,
+            GameMenu = 4,
         }
 
         private static readonly string[] HeldActions = { "Horizontal", "Vertical" };
@@ -32,6 +33,9 @@ namespace FollowingSeasCoop.Runtime
         private static readonly List<InputAction> _switchedOff = new List<InputAction>();
 
         public static bool Active => _reasons != Reason.None;
+
+        /// <summary>The block is in force: the game has not read the player's keys since the last frame's end.</summary>
+        public static bool Applied => _applied;
 
         public static void Set(Reason reason, bool on)
         {

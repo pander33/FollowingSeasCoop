@@ -49,7 +49,7 @@ namespace FollowingSeasCoop
             SendRateHz = Config.Bind("Sync", "SendRateHz", 20, "How many times a second a player's pose is sent.");
             InterpDelayMs = Config.Bind("Sync", "InterpDelayMs", 100,
                 "How far in the past remote players are drawn. Larger is smoother and laggier.");
-            MenuKey = Config.Bind("UI", "MenuKey", "F8", "Key that opens the co-op menu (a UnityEngine.InputSystem.Key name).");
+            MenuKey = Config.Bind("UI", "MenuKey", "F8", "Key that opens the debug menu (a UnityEngine.InputSystem.Key name).");
             ShowStatus = Config.Bind("UI", "ShowStatus", true, "Show the status overlay while a session is active.");
             SaveDir = Config.Bind("Dev", "SaveDir", "",
                 "Development: keep this copy's saves and settings in this folder instead of the game's own. " +

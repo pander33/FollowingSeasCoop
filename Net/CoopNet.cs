@@ -136,6 +136,7 @@ namespace FollowingSeasCoop.Net
         public double RttMs => Clock.RttMs;
         public bool IsHost => Role == Role.Host;
         public bool IsClient => Role == Role.Client;
+        public bool Closing => _closing != null;
         public SessionMemberInfo[] RosterSnapshot => (SessionMemberInfo[])_roster.Clone();
 
         public string GetPlayerName(uint netId)

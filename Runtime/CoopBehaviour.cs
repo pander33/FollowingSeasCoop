@@ -91,6 +91,7 @@ namespace FollowingSeasCoop.Runtime
             PatchHealth.Install("Hull", () => ControlsSync.InstallHull(_harmony), log);
             // Without it a shot animal and its yield stay on the hunter's copy.
             PatchHealth.Install("Hunt", () => HuntSync.Install(_harmony), log);
+            PatchHealth.Install("Co-op UI", () => CoopGameUI.Install(_harmony), log);
             Plugin.Log.LogInfo("Patches: " + PatchHealth.Details);
         }
 
@@ -101,6 +102,8 @@ namespace FollowingSeasCoop.Runtime
         /// <summary>Null when hosting may start now, otherwise why not.</summary>
         public string HostBlocker()
         {
+            if (Net.Role != Role.None) return "A session is already active";
+            if (Net.Closing) return "Finishing the previous connection";
             if (PatchHealth.Blocker != null) return "The mod does not fit this game version: " + PatchHealth.Blocker;
             if (WorldTransfer.GuestWorld) return "Still leaving the previous session";
             if (!GameAccess.InWorld) return "Load your world first, then host";
@@ -110,6 +113,8 @@ namespace FollowingSeasCoop.Runtime
         /// <summary>Null when a join may start now, otherwise why not.</summary>
         public string JoinBlocker()
         {
+            if (Net.Role != Role.None) return "A connection is already active";
+            if (Net.Closing) return "Finishing the previous connection";
             if (PatchHealth.Blocker != null) return "The mod does not fit this game version: " + PatchHealth.Blocker;
             if (WorldTransfer.GuestWorld) return "Still leaving the previous session";
             if (!GameAccess.AtMainMenu) return "Join from the title screen";
@@ -126,12 +131,23 @@ namespace FollowingSeasCoop.Runtime
             return Net.IsHost;
         }
 
-        public bool Join(string ip)
+        /// <summary>Joins a host. The address is a name or an IP, with ":port" when it is not the configured one.</summary>
+        public bool Join(string address)
         {
             string blocker = JoinBlocker();
             if (blocker != null) { Notice = blocker; return false; }
             ApplyConfig();
-            Net.StartClient(string.IsNullOrEmpty(ip) ? Plugin.JoinIp.Value : ip.Trim(), Plugin.Port.Value);
+            string host = string.IsNullOrWhiteSpace(address) ? Plugin.JoinIp.Value.Trim() : address.Trim();
+            int port = Plugin.Port.Value;
+            // One colon only: more of them is an IPv6 address, not a port.
+            int colon = host.LastIndexOf(':');
+            if (colon > 0 && host.IndexOf(':') == colon && int.TryParse(host.Substring(colon + 1), out int given) &&
+                given >= 1 && given <= 65535)
+            {
+                port = given;
+                host = host.Substring(0, colon);
+            }
+            Net.StartClient(host, port);
             Notice = Net.IsClient ? "Connecting to " + Net.HostLabel + " ..." : Net.LastError;
             return Net.IsClient;
         }
@@ -311,6 +327,9 @@ namespace FollowingSeasCoop.Runtime
             try
             {
                 TickMenuKey();
+                // Each guards itself: the menu must not take the network's frame with it.
+                CoopGameUI.TickInput(this);
+                CoopGameUI.TickPanel(this);
                 Net.PollEvents();
                 try { TickDev(); }
                 catch (Exception e)
@@ -424,6 +443,7 @@ namespace FollowingSeasCoop.Runtime
 
         private void OnDestroy()
         {
+            CoopGameUI.Dispose();
             if (Items != null) SceneManager.sceneUnloaded -= Items.WorldUnloaded;
             if (Hunt != null) SceneManager.sceneUnloaded -= Hunt.WorldUnloaded;
         }
