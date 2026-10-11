@@ -19,6 +19,18 @@ namespace FollowingSeasCoop.Runtime
     {
         private static readonly MethodInfo LeakDegradeMethod = AccessTools.Method(typeof(LeakController), "Degrade");
         private static readonly FieldInfo AnimalDeadField = AccessTools.Field(typeof(WanderingGameController), "dead");
+        private static readonly FieldInfo WeatherTypesField = AccessTools.Field(typeof(WeatherController), "weatherTypes");
+        private static readonly FieldInfo IssuerSpotField = AccessTools.Field(typeof(TaskMenuController), "cameraLockPos");
+        private static readonly FieldInfo TaskPrefabField = AccessTools.Field(typeof(TaskPanelHandler), "taskPrefab");
+        private static readonly FieldInfo TaskContainerField = AccessTools.Field(typeof(TaskPanelHandler), "taskContainer");
+        private static readonly MethodInfo CreateTaskMethod = AccessTools.Method(typeof(TaskPanelHandler), "CreateTask");
+        private static readonly FieldInfo TaskDestinationField = AccessTools.Field(typeof(TaskHandler), "destinationName");
+        private static readonly FieldInfo TaskAssignmentRunField = AccessTools.Field(typeof(TaskPanelHandler), "assignmentRun");
+        private static readonly FieldInfo TaskRewardTypeField = AccessTools.Field(typeof(TaskHandler), "rewardType");
+        private static readonly FieldInfo TaskRewardAmountField = AccessTools.Field(typeof(TaskHandler), "rewardAmount");
+        private static readonly FieldInfo TaskRewardKindField = AccessTools.Field(typeof(TaskHandler), "pType");
+        private static readonly MethodInfo TaskAddProvisionsMethod = AccessTools.Method(typeof(TaskHandler), "AddProvisions");
+        private static readonly FieldInfo CargoBoxesField =AccessTools.Field(typeof(ShipHullMover), "cargoBoxes");
 
         private string _traceWho = "";
         private long _dumpSlot = -1;
@@ -394,6 +406,182 @@ namespace FollowingSeasCoop.Runtime
             return "Oakum " + stores.currentOakum.ToString("F0") + ", food " + stores.currentFood.ToString("F0");
         });
 
+        public string DevGoToRowboat() => Dev(() =>
+        {
+            PlayerHandler player = GameAccess.Player;
+            ShipHullMover ship = GameAccess.ActiveShip();
+            if (player == null || ship == null) return "There is no ship";
+            GameObject boat = ship.rowboatDeployed ? RowboatSync.Of(ship) : null;
+            if (boat == null) return "The rowboat is stowed";
+            PlayerRescue.Move(player, boat.transform.position + Vector3.up * 1.5f);
+            return "In the rowboat";
+        });
+
+        /// <summary>To the nearest loaded contract board, where the game puts the view of a player who reads it.</summary>
+        public string DevGoToDock() => Dev(() =>
+        {
+            PlayerHandler player = GameAccess.Player;
+            if (player == null) return "No world is loaded";
+            TaskIssuer nearest = null;
+            float distance = float.MaxValue;
+            foreach (TaskIssuer issuer in
+                     UnityEngine.Object.FindObjectsByType<TaskIssuer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+            {
+                float d = Vector3.Distance(issuer.transform.position, player.transform.position);
+                if (d < distance) { distance = d; nearest = issuer; }
+            }
+            if (nearest == null) return "No dock is loaded here";
+            TaskMenuController menu = nearest.GetComponent<TaskMenuController>();
+            Transform spot = menu != null ? IssuerSpotField?.GetValue(menu) as Transform : null;
+            PlayerRescue.Move(player, spot != null ? spot.position : nearest.transform.position + Vector3.up * 1.5f);
+            return "At the contracts of '" + nearest.transform.root.name + "', which were " + distance.ToString("F0") + " m away";
+        });
+
+        /// <summary>Off the deck, 20 m abeam: what a fall over the side leaves.</summary>
+        public string DevOverboard() => Dev(() =>
+        {
+            PlayerHandler player = GameAccess.Player;
+            ShipHullMover ship = GameAccess.ActiveShip();
+            if (player == null || ship == null) return "There is no ship";
+            Vector3 abeam = ship.transform.right;
+            abeam.y = 0f;
+            PlayerRescue.Move(player, ship.transform.position + abeam.normalized * 20f + Vector3.up * 2f);
+            return "Overboard";
+        });
+
+        /// <summary>The next weather type of the game's list, brought in the way the game changes weather.</summary>
+        public string DevNextWeather() => Dev(() =>
+        {
+            DataPersistenceManager dp = GameAccess.Dp;
+            WeatherController weather = dp != null ? dp.weatherController : null;
+            if (weather == null) return "No world is loaded";
+            if (!(WeatherTypesField?.GetValue(weather) is List<WeatherType> types) || types.Count == 0) return "The game's weather list was not found";
+            int next = (types.IndexOf(weather.currentWeatherType) + 1) % types.Count;
+            weather.ChangeWeather(types[next].id);
+            return "Weather: " + types[next].id + " (" + (next + 1) + " of " + types.Count + "), blending in";
+        });
+
+        public string DevAddHours(int hours) => Dev(() =>
+        {
+            DataPersistenceManager dp = GameAccess.Dp;
+            var time = dp != null && dp.enviro != null ? dp.enviro.Time : null;
+            if (time == null) return "No world is loaded";
+            // Through the calendar: past midnight the day, and with it the month, must stay real.
+            DateTime then = new DateTime(time.years, time.months, time.days, time.hours, time.minutes, time.seconds).AddHours(hours);
+            time.SetDateTime(then.Second, then.Minute, then.Hour, then.Day, then.Month, then.Year);
+            return "Time: " + time.hours.ToString("00") + ":" + time.minutes.ToString("00");
+        });
+
+        /// <summary>
+        /// A contract from the nearest place that gives cargo: generated by the game's own task
+        /// object, then built as the game builds an accepted contract of a loaded world.
+        /// </summary>
+        public string DevTakeContract() => Dev(() =>
+        {
+            PlayerHandler player = GameAccess.Player;
+            ShipHullMover ship = GameAccess.ActiveShip();
+            TaskPanelHandler panel = TaskPanelHandler.Instance;
+            if (player == null || ship == null || panel == null) return "There is no ship";
+            var prefab = TaskPrefabField?.GetValue(panel) as GameObject;
+            var container = TaskContainerField?.GetValue(panel) as GameObject;
+            if (prefab == null || container == null || CreateTaskMethod == null) return "The game's task panel was not found";
+            // Until then the panel builds every string of its list itself: this one would be built twice.
+            if (!(TaskAssignmentRunField?.GetValue(panel) is bool built) || !built) return "The task panel has not built its contracts yet";
+
+            Destination origin = null;
+            float distance = float.MaxValue;
+            foreach (Destination place in
+                     UnityEngine.Object.FindObjectsByType<Destination>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+            {
+                if (place.providedCargoes == null || place.providedCargoes.Count == 0) continue;
+                float d = Vector3.Distance(place.transform.position, player.transform.position);
+                if (d < distance) { distance = d; origin = place; }
+            }
+            if (origin == null) return "No place that gives cargo was found";
+
+            // Under the panel's container: the task looks for its ship four parents up.
+            GameObject draft = UnityEngine.Object.Instantiate(prefab);
+            string data, given = "";
+            try
+            {
+                draft.transform.SetParent(container.transform, false);
+                TaskHandler task = draft.GetComponent<TaskHandler>();
+                task.targetShip = ship;
+                task.SetOrigin(origin);
+                task.GenNewTaskData();
+                data = task.GetSaveString();
+                // What the game's Accept button does besides: a reward in provisions is given at once.
+                if (TaskRewardTypeField?.GetValue(task) as string == "Provisions" && TaskAddProvisionsMethod != null)
+                {
+                    TaskAddProvisionsMethod.Invoke(task, new[] { TaskRewardAmountField.GetValue(task), TaskRewardKindField.GetValue(task) });
+                    given = ", its reward in provisions given";
+                }
+            }
+            finally { UnityEngine.Object.Destroy(draft); }
+
+            panel.acceptedTasks.Add(data);
+            CreateTaskMethod.Invoke(panel, new object[] { data });
+            string[] fields = data.Split('=');
+            return "Contract " + fields[12] + ": " + fields[1] + " x " + fields[6] + " from " + origin.name + " to " + fields[15] + given;
+        });
+
+        /// <summary>
+        /// One crate of the first contract that still has cargo to load, in the first free place of
+        /// the hold: the steps of the game's cargo panel, without the panel (and without its
+        /// rule of 400 m from the origin).
+        /// </summary>
+        public string DevLoadCrate() => Dev(() =>
+        {
+            ShipHullMover ship = GameAccess.ActiveShip();
+            TaskPanelHandler panel = TaskPanelHandler.Instance;
+            if (ship == null || panel == null) return "There is no ship";
+            TaskHandler task = null;
+            foreach (GameObject obj in panel.acceptedTaskObjects)
+            {
+                TaskHandler t = obj != null ? obj.GetComponent<TaskHandler>() : null;
+                if (t == null || t.complete || t.cargo == null || t.loaded >= t.quantity) continue;
+                task = t;
+                break;
+            }
+            if (task == null) return "No contract has cargo left to load";
+            if (!(CargoBoxesField?.GetValue(ship) is List<CargoPlacer> placers)) return "The ship's cargo boxes were not found";
+
+            int boxes = 0;
+            foreach (CargoPlacer placer in placers)
+            {
+                Transform box = placer != null ? placer.transform.parent : null;
+                BoxCollider bounds = box != null ? box.GetComponent<BoxCollider>() : null;
+                if (bounds == null) continue;
+                boxes++;
+                var taken = new HashSet<Vector3Int>();
+                foreach (Transform child in box)
+                    if (child.GetComponent<CargoDefinition>() != null) taken.Add(Vector3Int.RoundToInt(child.localPosition * 2f));
+                // The panel's grid: whole metres, shifted by half where the box is an even number wide.
+                float shift = bounds.size.x % 2f == 0f ? 0.5f : 0f;
+                float halfX = bounds.size.x * 0.5f - 0.5f, halfZ = bounds.size.z * 0.5f - 0.5f;
+                Vector3 centre = bounds.center;
+                for (float z = Mathf.Ceil(centre.z - halfZ); z <= centre.z + halfZ; z += 1f)
+                    for (float x = Mathf.Ceil(centre.x - halfX - shift) + shift; x <= centre.x + halfX; x += 1f)
+                    {
+                        var place = new Vector3(x, -0.5f, z);
+                        if (taken.Contains(Vector3Int.RoundToInt(place * 2f))) continue;
+                        GameObject crate = UnityEngine.Object.Instantiate(task.cargo, box);
+                        crate.transform.localPosition = place;
+                        crate.transform.rotation = box.rotation;
+                        FixedJoint joint = crate.GetComponent<FixedJoint>();
+                        if (joint != null) joint.connectedBody = ship.GetComponent<Rigidbody>();
+                        CargoDefinition cargo = crate.GetComponent<CargoDefinition>();
+                        cargo.SetReflectionProbe(ship.cargoReflectionProbe);
+                        cargo.taskID = task.id;
+                        if (TaskDestinationField?.GetValue(task) is string destination && destination.Length > 0) cargo.SetDestination(destination);
+                        task.loaded += 1f;
+                        ship.UpdateCargoMass();
+                        return "Crate of " + task.id + " loaded: " + task.loaded.ToString("F0") + " of " + task.quantity.ToString("F0");
+                    }
+            }
+            return boxes == 0 ? "No cargo box with bounds was found on this ship" : "The hold has no free place";
+        });
+
         /// <summary>
         /// What the host tells a player who has just come in, told again: the household, the
         /// contracts, the hold, the animals and every control. Not the things: a manifest makes a
@@ -536,6 +724,25 @@ namespace FollowingSeasCoop.Runtime
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Money +100")) _devNotice = DevAddMoney(100f);
             if (GUILayout.Button("Oakum and food +5")) _devNotice = DevAddStores();
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Take a contract")) _devNotice = DevTakeContract();
+            if (GUILayout.Button("Load a crate")) _devNotice = DevLoadCrate();
+            GUILayout.EndHorizontal();
+
+            // The sea and the sky are the host's: a guest's are written over four times a second.
+            GUI.enabled = GameAccess.InWorld && !Net.IsClient;
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Next weather")) _devNotice = DevNextWeather();
+            if (GUILayout.Button("Time +3 h")) _devNotice = DevAddHours(3);
+            GUILayout.EndHorizontal();
+            GUI.enabled = GameAccess.InWorld;
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Go to a dock")) _devNotice = DevGoToDock();
+            if (GUILayout.Button("Go to the rowboat")) _devNotice = DevGoToRowboat();
+            if (GUILayout.Button("Overboard")) _devNotice = DevOverboard();
             GUILayout.EndHorizontal();
 
             foreach (SessionMemberInfo member in Net.RosterSnapshot)
