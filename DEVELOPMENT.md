@@ -101,7 +101,7 @@ been run yet.
 | Rowboat | Launching is a control; in the water it is moved by the copy of the player in it. | not played |
 | Crew | A guest's orders are carried out by the host's crew; the looks and the roster are sent to guests. | not played |
 | Player menu | A Co-op button and page made of copies of the game's own buttons; LAN list of hosted games. | played |
-| Steam | A host is also reachable by its Steam id: Steam P2P datagrams tunnelled to LiteNetLib through loopback. Rich presence lists hosting friends in the join dialog and gives Steam's own Join Game and invites. Friends-only admission. | not played |
+| Steam | A host is also reachable by its Steam id: Steam P2P datagrams tunnelled to LiteNetLib through loopback. Rich presence lists hosting friends in the join dialog and gives Steam's own Join Game and invites. Friends-only admission. | played (connecting) |
 | Rescue | A drowned player is put back on deck before the game's death dialog. | not played |
 
 Not shared: living animals, a fish in another player's hand, another player's shot, the view

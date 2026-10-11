@@ -12,8 +12,7 @@ their world, friends join it, and everybody is crew of the same ship.
 
 Unofficial; not made or endorsed by Whipstaff Games.
 
-> **This is an early version.** Not every part has been played by a full crew yet, and playing
-> through Steam is the newest of them: if it fails, join by address.
+> **This is an early version.** Not every part has been played by a full crew yet.
 > **The host should back up their saves first**: paste
 > `%USERPROFILE%\AppData\LocalLow\WhipstaffGames\Following Seas` into the address bar of Explorer
 > and copy that folder somewhere safe.
