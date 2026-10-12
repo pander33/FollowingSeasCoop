@@ -158,3 +158,4 @@ wire protocol did.
 | 2026-10-11 | 12 | Release 0.1.0 prepared: player's README, this file, the release script. |
 | 2026-10-11 | 12 | Hosting and joining through Steam, in the Co-op page: friends list, Steam ID, friends only. |
 | 2026-10-11 | 12 | Two release archives: complete with BepInEx 5.4.23.5, and the plugin alone. |
+| 2026-10-12 | 12 | Dev buttons: water in the hull, harvesting, delivering and abandoning a contract, a hand aboard or ashore, a guest's world loaded again. |

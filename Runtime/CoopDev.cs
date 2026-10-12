@@ -6,6 +6,7 @@ using FollowingSeasCoop.Net;
 using FollowingSeasCoop.Sync;
 using HarmonyLib;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace FollowingSeasCoop.Runtime
 {
@@ -31,6 +32,9 @@ namespace FollowingSeasCoop.Runtime
         private static readonly FieldInfo TaskRewardKindField = AccessTools.Field(typeof(TaskHandler), "pType");
         private static readonly MethodInfo TaskAddProvisionsMethod = AccessTools.Method(typeof(TaskHandler), "AddProvisions");
         private static readonly FieldInfo CargoBoxesField =AccessTools.Field(typeof(ShipHullMover), "cargoBoxes");
+        private static readonly FieldInfo AnimalBodyField = AccessTools.Field(typeof(WanderingGameController), "heiarchicalParent");
+        private static readonly FieldInfo MassHolderField = AccessTools.Field(typeof(ShipHullMover), "vhcm");
+        private static readonly FieldInfo TaskCargoKindField = AccessTools.Field(typeof(TaskHandler), "cargoToCreate");
 
         private string _traceWho = "";
         private long _dumpSlot = -1;
@@ -331,6 +335,46 @@ namespace FollowingSeasCoop.Runtime
             return "No leak is open";
         });
 
+        /// <summary>Water into the hull, the way the game keeps it: as mass of the hull.</summary>
+        public string DevAddWater(float kg) => Dev(() =>
+        {
+            ShipHullMover ship = GameAccess.ActiveShip();
+            if (ship == null) return "There is no ship";
+            object holder = MassHolderField?.GetValue(ship);
+            Rigidbody hull = ship.GetComponent<Rigidbody>();
+            if (holder == null || holder.Equals(null) || hull == null) return "The hull's mass was not found";
+            Traverse on = Traverse.Create(holder);
+            Traverse mass = on.Field("baseMass").FieldExists() ? on.Field("baseMass") : on.Property("baseMass");
+            object had = mass.GetValue();
+            if (had == null) return "The hull's mass was not found";
+            float now = Convert.ToSingle(had) + kg;
+            mass.SetValue(now);
+            hull.mass = now;
+            return "Water +" + kg.ToString("F0") + " kg: the hull is " + now.ToString("F0") + " kg (dry " +
+                   ship.GetMinHullMass().ToString("F0") + ", the game's limit " + ship.GetMaxHullMass().ToString("F0") + ")";
+        });
+
+        /// <summary>
+        /// A guest's world loaded again from what the host sent at the join, as the game does by
+        /// itself in places: the world scene is closed and the game's own loader is started.
+        /// </summary>
+        public string DevReloadWorld() => Dev(() =>
+        {
+            if (!WorldTransfer.GuestWorld || World.State != GuestWorldState.InWorld || !GameAccess.InWorld || GameManager.instance == null)
+                return "Only a guest that is in the host's world can load it again";
+            // What the game's menu unhooks before it closes the world.
+            foreach (var rope in UnityEngine.Object.FindObjectsByType<SimpleRopeController>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                Application.onBeforeRender -= rope.UpdateRopePositions;
+            foreach (var line in UnityEngine.Object.FindObjectsByType<CurvedLineRenderer>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                Application.onBeforeRender -= line.UpdatePoints;
+            Time.timeScale = 1f;
+            GlobalData.NewGame = false;
+            GlobalData.SaveFileToLoad = WorldTransfer.SessionSaveName;
+            SceneManager.UnloadSceneAsync(GameAccess.WorldScene);
+            GameManager.instance.LoadGame();
+            return "The world is loading again";
+        });
+
         /// <summary>Puts a fish on the next free hook, the way a bite does.</summary>
         public string DevHookFish() => Dev(() =>
         {
@@ -361,15 +405,18 @@ namespace FollowingSeasCoop.Runtime
             return "Fish in the hold: " + hold.currentFishCount;
         });
 
-        // The nearest one that is still alive: a second press must find the next animal.
-        private static WanderingGameController NearestAnimal(PlayerHandler player, out float distance)
+        // The nearest one that is still alive, or the nearest carcass: a second press must find the
+        // next animal.
+        private static WanderingGameController NearestAnimal(PlayerHandler player, bool dead, out float distance)
         {
             WanderingGameController nearest = null;
             distance = float.MaxValue;
             foreach (WanderingGameController animal in
                      UnityEngine.Object.FindObjectsByType<WanderingGameController>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
             {
-                if (AnimalDeadField != null && (bool)AnimalDeadField.GetValue(animal)) continue;
+                if ((AnimalDeadField != null && (bool)AnimalDeadField.GetValue(animal)) != dead) continue;
+                // A harvested animal stays, without its body.
+                if (dead && (AnimalBodyField?.GetValue(animal) as Transform) == null) continue;
                 float d = Vector3.Distance(animal.transform.position, player.transform.position);
                 if (d < distance) { distance = d; nearest = animal; }
             }
@@ -380,7 +427,7 @@ namespace FollowingSeasCoop.Runtime
         {
             PlayerHandler player = GameAccess.Player;
             if (player == null) return "No world is loaded";
-            WanderingGameController animal = NearestAnimal(player, out float distance);
+            WanderingGameController animal = NearestAnimal(player, false, out float distance);
             if (animal == null) return "No living animal is loaded here";
             PlayerRescue.Move(player, animal.transform.position + Vector3.up * 1.5f + Vector3.forward * 3f);
             return "At '" + animal.name + "', which was " + distance.ToString("F0") + " m away";
@@ -390,10 +437,69 @@ namespace FollowingSeasCoop.Runtime
         {
             PlayerHandler player = GameAccess.Player;
             if (player == null) return "No world is loaded";
-            WanderingGameController animal = NearestAnimal(player, out float distance);
+            WanderingGameController animal = NearestAnimal(player, false, out float distance);
             if (animal == null) return "No living animal is loaded here";
             animal.Kill();
             return "Killed '" + animal.name + "', " + distance.ToString("F0") + " m away";
+        });
+
+        /// <summary>The nearest carcass harvested, as the game's "Harvest Game" prompt does.</summary>
+        public string DevHarvestAnimal() => Dev(() =>
+        {
+            PlayerHandler player = GameAccess.Player;
+            if (player == null) return "No world is loaded";
+            WanderingGameController animal = NearestAnimal(player, true, out float distance);
+            if (animal == null) return "No dead animal is loaded here: kill one first";
+            animal.PerformAction();
+            return "Harvested '" + animal.name + "', " + distance.ToString("F0") + " m away: its yield lies there";
+        });
+
+        /// <summary>
+        /// One hand more aboard, or one fewer: the steps of the game's dock dialog. The list of
+        /// owned hands is changed and the whole crew is made anew from it.
+        /// </summary>
+        public string DevCrewAboard(bool aboard) => Dev(() =>
+        {
+            ShipHullMover ship = GameAccess.ActiveShip();
+            DataPersistenceManager dp = GameAccess.Dp;
+            if (ship == null || ship.crew == null || dp == null || dp.gameData == null) return "There is no ship";
+            List<string> owned = dp.gameData.crewOwned;
+            if (owned == null) return "The world has no list of hands";
+            if (ship.epitaphNavMapper == null || ship.crewInitPositions == null) return "This ship has no place for crew";
+            string mine = ship.id ?? "";
+            // What the game's save does first: a hand taken aboard at an island is not in the list yet.
+            foreach (NewCrewController hand in ship.crew)
+            {
+                if (hand == null || string.IsNullOrEmpty(hand.id)) continue;
+                int at = owned.FindIndex(line => line != null && line.Split('=')[0] == hand.id);
+                if (at < 0) owned.Add(hand.id + "=" + mine); else owned[at] = hand.id + "=" + mine;
+            }
+
+            int room = Mathf.Min(ship.maxCrew, ship.crewInitPositions.Count);
+            if (aboard && ship.crew.Count >= room) return "The crew is full: " + ship.crew.Count + " of " + room;
+            string who = null;
+            for (int i = 0; i < owned.Count && who == null; i++)
+            {
+                string[] parts = owned[i] != null ? owned[i].Split('=') : new string[0];
+                if (parts.Length < 2 || (parts[1] == mine) == aboard) continue;
+                owned[i] = parts[0] + "=" + (aboard ? mine : "NONE");
+                who = parts[0];
+            }
+            if (who == null) return aboard ? "No hand is left ashore (" + owned.Count + " owned)" : "No hand is aboard";
+
+            foreach (NewCrewController hand in
+                     UnityEngine.Object.FindObjectsByType<NewCrewController>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                hand.DestroySelf();
+            ship.crew.Clear();
+            // Not the game's: its dialog is used at rest. Whatever the crew was doing is not being done.
+            foreach (CrewInteractionObject station in ship.GetComponentsInChildren<CrewInteractionObject>(true))
+            {
+                station.assigned = false;
+                station.assignedCrew = null;
+                station.interacting = false;
+            }
+            ship.LoadCrew(dp.gameData);
+            return "'" + who + "' is " + (aboard ? "aboard" : "ashore") + ": crew " + ship.crew.Count + " of " + room;
         });
 
         public string DevGoToPlayer(uint netId) => Dev(() =>
@@ -612,6 +718,99 @@ namespace FollowingSeasCoop.Runtime
             return boxes == 0 ? "No cargo box with bounds was found on this ship" : "The hold has no free place";
         });
 
+        // The first contract that is still open.
+        private static TaskHandler DevOpenContract(TaskPanelHandler panel)
+        {
+            foreach (GameObject obj in panel.acceptedTaskObjects)
+            {
+                TaskHandler task = obj != null ? obj.GetComponent<TaskHandler>() : null;
+                if (task != null && !task.complete && !task.isProductType) return task;
+            }
+            return null;
+        }
+
+        private static bool IsTaskLine(string line, string id)
+        {
+            string[] fields = line != null ? line.Split('=') : null;
+            return fields != null && fields.Length > 12 && fields[12] == id;
+        }
+
+        /// <summary>
+        /// The first open contract delivered in full: what the cargo panel does when the last crate
+        /// is unloaded at the destination, without the panel and wherever the ship is.
+        /// </summary>
+        public string DevDeliverContract() => Dev(() =>
+        {
+            ShipHullMover ship = GameAccess.ActiveShip();
+            DataPersistenceManager dp = GameAccess.Dp;
+            TaskPanelHandler panel = TaskPanelHandler.Instance;
+            if (ship == null || dp == null || panel == null) return "There is no ship";
+            TaskHandler task = DevOpenContract(panel);
+            if (task == null) return "No contract is open";
+            // The game's completion measures the way to it.
+            if (dp.pirateDestination == null) return "The game's pirate destination is not loaded";
+
+            int crates = 0;
+            foreach (CargoDefinition crate in ship.GetComponentsInChildren<CargoDefinition>(true))
+            {
+                if (crate.taskID != task.id) continue;
+                UnityEngine.Object.Destroy(crate.gameObject);
+                crates++;
+            }
+            // As the task list marks every contract it shows: completion then leaves the cursor alone.
+            task.openedThroughExternalMenu = true;
+            task.progress = task.quantity;
+            task.loaded = 0f;
+            float money = dp.gameData.tearCount;
+            string id = task.id;
+            task.CompleteTask();
+            ship.UpdateCargoMass();
+            return "Contract " + id + " delivered: " + crates + " crate(s) unloaded, money " +
+                   (dp.gameData.tearCount - money).ToString("+0;-0;0") + " (a debt is paid first)";
+        });
+
+        /// <summary>
+        /// The first open contract abandoned: the steps of the game's abandon dialog. Its crates go
+        /// and what was loaded is owed to the place it came from.
+        /// </summary>
+        public string DevAbandonContract() => Dev(() =>
+        {
+            ShipHullMover ship = GameAccess.ActiveShip();
+            DataPersistenceManager dp = GameAccess.Dp;
+            TaskPanelHandler panel = TaskPanelHandler.Instance;
+            if (ship == null || dp == null || dp.gameData == null || panel == null) return "There is no ship";
+            TaskHandler task = DevOpenContract(panel);
+            if (task == null) return "No contract is open";
+
+            var kind = TaskCargoKindField?.GetValue(task) as CargoDefinition;
+            if (kind == null && task.cargo != null) kind = task.cargo.GetComponent<CargoDefinition>();
+            // Counted before the crates go: removing them takes them off the task's numbers.
+            float owed = Mathf.Round((kind != null ? kind.value : 0f) * task.loaded * 100f) / 100f;
+            ship.RemoveCargoOfTask(task);
+            if (owed > 0f && dp.gameData.debts != null)
+            {
+                List<string> debts = dp.gameData.debts;
+                bool found = false;
+                for (int i = 0; i < debts.Count; i++)
+                {
+                    string[] parts = debts[i] != null ? debts[i].Split('=') : new string[0];
+                    if (parts.Length < 2 || parts[0] != task.originName) continue;
+                    debts[i] = parts[0] + "=" + (owed + float.Parse(parts[1]));
+                    found = true;
+                }
+                if (!found) debts.Add(task.originName + "=" + owed);
+            }
+
+            string id = task.id;
+            int at = dp.gameData.tasks != null ? dp.gameData.tasks.FindIndex(line => IsTaskLine(line, id)) : -1;
+            if (at >= 0) dp.gameData.tasks.RemoveAt(at);
+            at = panel.acceptedTasks != null ? panel.acceptedTasks.FindIndex(line => IsTaskLine(line, id)) : -1;
+            if (at >= 0) panel.acceptedTasks.RemoveAt(at);
+            panel.acceptedTaskObjects.Remove(task.gameObject);
+            UnityEngine.Object.Destroy(task.gameObject);
+            return "Contract " + id + " abandoned" + (owed > 0f ? ", " + owed.ToString("F0") + " owed to " + task.originName : ", nothing owed");
+        });
+
         /// <summary>
         /// What the host tells a player who has just come in, told again: the household, the
         /// contracts, the hold, the animals and every control. Not the things: a manifest makes a
@@ -731,6 +930,9 @@ namespace FollowingSeasCoop.Runtime
 
             GUI.enabled = Participating;
             if (GUILayout.Button(Net.IsClient ? "Ask the host for everything again" : "Send everything again")) _devNotice = DevResync();
+            // Only a guest holds a world that is not a save of its own.
+            GUI.enabled = WorldTransfer.GuestWorld && GameAccess.InWorld;
+            if (GUILayout.Button("Load the world again")) _devNotice = DevReloadWorld();
             GUI.enabled = GameAccess.InWorld;
 
             GUILayout.BeginHorizontal();
@@ -742,6 +944,11 @@ namespace FollowingSeasCoop.Runtime
             if (GUILayout.Button("Mend a leak")) _devNotice = DevMendLeak();
             GUILayout.EndHorizontal();
 
+            // The water is the mass of the host's hull: a guest's is written over.
+            GUI.enabled = GameAccess.InWorld && !Net.IsClient;
+            if (GUILayout.Button("Water in the hull +500 kg")) _devNotice = DevAddWater(500f);
+            GUI.enabled = GameAccess.InWorld;
+
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Fish on a hook")) _devNotice = DevHookFish();
             if (GUILayout.Button("Fish into the hold")) _devNotice = DevAddFish();
@@ -750,6 +957,7 @@ namespace FollowingSeasCoop.Runtime
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Go to an animal")) _devNotice = DevGoToAnimal();
             if (GUILayout.Button("Kill it")) _devNotice = DevKillAnimal();
+            if (GUILayout.Button("Harvest it")) _devNotice = DevHarvestAnimal();
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
@@ -762,6 +970,17 @@ namespace FollowingSeasCoop.Runtime
             if (GUILayout.Button("Load a crate")) _devNotice = DevLoadCrate();
             GUI.enabled = GameAccess.InWorld && Participating;
             if (GUILayout.Button("Make a thing")) _devNotice = DevMakeThing();
+            GUILayout.EndHorizontal();
+            GUI.enabled = GameAccess.InWorld;
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Deliver the contract")) _devNotice = DevDeliverContract();
+            if (GUILayout.Button("Abandon it")) _devNotice = DevAbandonContract();
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("A hand aboard")) _devNotice = DevCrewAboard(true);
+            if (GUILayout.Button("A hand ashore")) _devNotice = DevCrewAboard(false);
             GUILayout.EndHorizontal();
 
             // The sea and the sky are the host's: a guest's are written over four times a second.
