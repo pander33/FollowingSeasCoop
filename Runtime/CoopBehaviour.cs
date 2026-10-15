@@ -417,6 +417,7 @@ namespace FollowingSeasCoop.Runtime
                     case MsgType.CrewOrder: Crew.OnOrder((CrewOrderMsg)msg, from); break;
                     case MsgType.CrewState: Crew.OnState((CrewStateMsg)msg); break;
                     case MsgType.CrewRoster: Crew.OnRoster((CrewRosterMsg)msg, from); break;
+                    case MsgType.ModData: ModChannel.Deliver((ModDataMsg)msg); break;
                 }
             }
             catch (Exception e)

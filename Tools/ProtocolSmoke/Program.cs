@@ -24,7 +24,7 @@ namespace FollowingSeasCoop.ProtocolSmoke
             { "ItemState", 18 }, { "ItemMotion", 19 }, { "EconomyState", 20 }, { "EconomyDelta", 21 },
             { "TaskState", 22 }, { "JournalLine", 23 }, { "CargoOps", 24 }, { "CargoState", 25 },
             { "CargoLease", 26 }, { "AnimalState", 27 }, { "FishRecord", 28 }, { "RowboatState", 29 }, { "CrewOrder", 30 },
-            { "CrewState", 31 }, { "CrewRoster", 32 },
+            { "CrewState", 31 }, { "CrewRoster", 32 }, { "ModData", 33 },
         };
 
         private static readonly Dictionary<string, int> FrozenControls = new Dictionary<string, int>

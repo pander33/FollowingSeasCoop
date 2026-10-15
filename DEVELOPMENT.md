@@ -119,6 +119,7 @@ so it lines up on every copy whatever that copy's origin is.
 | Player menu | A Co-op button and page made of copies of the game's own buttons; LAN list of hosted games. |
 | Steam | A host is also reachable by its Steam id: Steam P2P datagrams tunnelled to LiteNetLib through loopback. Rich presence lists hosting friends in the join dialog and gives Steam's own Join Game and invites. Friends-only admission. |
 | Rescue | A drowned player is put back on deck before the game's death dialog. |
+| Other mods | `Runtime/ModChannel`: a line of text under a channel name, host to guests or guest to host; another mod reaches it by reflection (`Register`, `Send`, `Role`). |
 
 Not shared: living animals, a fish in another player's hand, another player's shot, the view
 through another player's spyglass, another player's rowing animation. A guest cannot ask for the
@@ -159,3 +160,4 @@ wire protocol did.
 | 2026-10-11 | 12 | Hosting and joining through Steam, in the Co-op page: friends list, Steam ID, friends only. |
 | 2026-10-11 | 12 | Two release archives: complete with BepInEx 5.4.23.5, and the plugin alone. |
 | 2026-10-12 | 12 | Dev buttons: water in the hull, harvesting, delivering and abandoning a contract, a hand aboard or ashore, a guest's world loaded again. |
+| 2026-10-15 | 13 | A channel for other mods (`ModChannel`, message `ModData`): Following Seas Omens shows the host's night events to its guests. |

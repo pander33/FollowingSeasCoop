@@ -40,6 +40,7 @@ namespace FollowingSeasCoop.Net
         CrewOrder = 30,
         CrewState = 31,
         CrewRoster = 32,
+        ModData = 33,
     }
 
     public interface INetMessage
