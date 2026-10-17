@@ -187,6 +187,8 @@ namespace FollowingSeasCoop.Net
         public bool IsHost => Role == Role.Host;
         public bool IsClient => Role == Role.Client;
         public bool Closing => _closing != null;
+        /// <summary>A new object for each started session, null when none: compared by reference.</summary>
+        public object Session { get; private set; }
         /// <summary>The session's datagrams also travel over Steam (host) or only over Steam (client).</summary>
         public bool OverSteam => _tunnel != null;
         /// <summary>Steam host: only Steam friends are let in, and nobody by address.</summary>
@@ -411,6 +413,7 @@ namespace FollowingSeasCoop.Net
             Clock.Reset();
             Role = Role.None;
             State = LinkState.Idle;
+            Session = null;
             OnRosterChanged?.Invoke();
         }
 
@@ -428,6 +431,7 @@ namespace FollowingSeasCoop.Net
 
         private NetManager NewManager()
         {
+            Session = new object();
             return new NetManager(_listener)
             {
                 AutoRecycle = true,

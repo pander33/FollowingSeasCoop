@@ -175,6 +175,9 @@ namespace FollowingSeasCoop.Sync
                     if (hook == null) return false;
                     reading.A = hook.fishOn ? 1f : 0f;
                     reading.B = hook.fishOn && hook.fish != null ? hook.fish.transform.localScale.x : 0f;
+                    // The number is the host's, as is the bite: a guest's own reading would argue with it.
+                    reading.Text = _net.IsClient ? slot.Text
+                        : hook.fishOn && hook.fish != null ? ModChannel.CatchUnitsText(hook.fish) : "";
                     return true;
                 }
                 default: return false;
@@ -188,7 +191,7 @@ namespace FollowingSeasCoop.Sync
             {
                 case ControlKind.Leak:
                 case ControlKind.FishPoint:
-                    return reading.A > 0.5f && Mathf.Abs(reading.B - slot.B) > 0.01f;
+                    return reading.A > 0.5f && (Mathf.Abs(reading.B - slot.B) > 0.01f || (reading.Text ?? "") != slot.Text);
                 default:
                     return false;
             }
@@ -206,6 +209,7 @@ namespace FollowingSeasCoop.Sync
                     if (hook == null) return true;
                     bool on = slot.A > 0.5f;
                     if (on && slot.B > 0f) hook.SetScale(slot.B);
+                    if (on && hook.fish != null) ModChannel.GiveCatchUnits(hook.fish, slot.Text);
                     hook.fishOn = on;
                     return true;
                 }

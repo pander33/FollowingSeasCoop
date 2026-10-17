@@ -22,9 +22,71 @@ namespace FollowingSeasCoop.Runtime
     public static class ModChannel
     {
         /// <summary>Raised when this class changes in a way a caller has to know of.</summary>
-        public const int Api = 1;
+        public const int Api = 2;
 
         private static readonly Dictionary<string, Action<string>> Handlers = new Dictionary<string, Action<string>>();
+        private static readonly Dictionary<string, Action<uint, string>> PeerHandlers = new Dictionary<string, Action<uint, string>>();
+
+        /// <summary>A new object for each session, null outside one: compare it by reference.</summary>
+        public static object SessionIdentity => CoopBehaviour.Instance != null ? CoopBehaviour.Instance.Net?.Session : null;
+
+        /// <summary>The host's number for a fish on a trolling hook; travels with the hook's state.</summary>
+        public static Func<UnityEngine.GameObject, int> CatchUnits { get; set; }
+
+        /// <summary>A guest is given the host's number for a fish on a trolling hook.</summary>
+        public static Action<UnityEngine.GameObject, int> ReceiveCatchUnits { get; set; }
+
+        /// <summary>NetIds of everyone in the session, in ascending order. Guests still loading the
+        /// world are listed but are not sent anything by <see cref="Send"/> until they are in it.</summary>
+        public static uint[] Members
+        {
+            get
+            {
+                var net = CoopBehaviour.Instance != null ? CoopBehaviour.Instance.Net : null;
+                if (net == null) return new uint[0];
+                var roster = net.RosterSnapshot;
+                var ids = new uint[roster.Length];
+                for (int i = 0; i < ids.Length; i++) ids[i] = roster[i].NetId;
+                Array.Sort(ids);
+                return ids;
+            }
+        }
+
+        /// <summary>As <see cref="Register"/>, and the handler is also given the sender's NetId (on a
+        /// guest always the host's).</summary>
+        public static void RegisterPeer(string channel, Action<uint, string> onReceive)
+        {
+            if (string.IsNullOrEmpty(channel)) return;
+            if (onReceive == null) PeerHandlers.Remove(channel);
+            else PeerHandlers[channel] = onReceive;
+        }
+
+        internal static void DeliverPeer(ModDataMsg msg, NetPeer from)
+        {
+            var net = CoopBehaviour.Instance != null ? CoopBehaviour.Instance.Net : null;
+            if (net == null || !PeerHandlers.TryGetValue(msg.Channel, out var handler)) return;
+            uint sender = net.IsHost ? net.PlayerNetIdForPeer(from) : 1u;
+            if (sender == 0) return;
+            try { handler(sender, msg.Text); }
+            catch (Exception e) { Plugin.Log.LogWarning("[ModChannel] Peer handler failed: " + e); }
+        }
+
+        /// <summary><see cref="CatchUnits"/> as text, "" without it or when it fails.</summary>
+        internal static string CatchUnitsText(UnityEngine.GameObject fish)
+        {
+            var read = CatchUnits;
+            if (read == null) return "";
+            try { return read(fish).ToString(System.Globalization.CultureInfo.InvariantCulture); }
+            catch (Exception e) { Plugin.Log.LogWarning("[ModChannel] CatchUnits failed: " + e); return ""; }
+        }
+
+        internal static void GiveCatchUnits(UnityEngine.GameObject fish, string text)
+        {
+            var give = ReceiveCatchUnits;
+            if (give == null || !int.TryParse(text, out int units)) return;
+            try { give(fish, units); }
+            catch (Exception e) { Plugin.Log.LogWarning("[ModChannel] ReceiveCatchUnits failed: " + e); }
+        }
 
         /// <summary>0 outside a session, 1 the host, 2 a guest (<see cref="Net.Role"/>).</summary>
         public static int Role
