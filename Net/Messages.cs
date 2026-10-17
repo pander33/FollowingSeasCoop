@@ -42,6 +42,8 @@ namespace FollowingSeasCoop.Net
         CrewRoster = 32,
         ModData = 33,
         FastTravel = 34,
+        ShipPlans = 35,
+        ShipLaunch = 36,
     }
 
     public interface INetMessage
@@ -404,6 +406,8 @@ namespace FollowingSeasCoop.Net
     public sealed class BoatStateMsg : INetMessage
     {
         public MsgType Type => MsgType.BoatState;
+        /// <summary>The hull's <c>ShipHullMover.id</c>: a pose of another kind of ship is not this copy's.</summary>
+        public string Ship = "";
         /// <summary>Host clock, milliseconds, at capture.</summary>
         public long Tick;
         public double X, Y, Z;
@@ -414,6 +418,7 @@ namespace FollowingSeasCoop.Net
 
         public void Serialize(NetDataWriter w)
         {
+            w.Put(Ship ?? "", Limits.Name);
             w.Put(Tick);
             w.Put(X); w.Put(Y); w.Put(Z);
             w.Put(Qx); w.Put(Qy); w.Put(Qz); w.Put(Qw);
@@ -423,6 +428,7 @@ namespace FollowingSeasCoop.Net
 
         public void Deserialize(NetDataReader r)
         {
+            Ship = r.GetString(Limits.Name);
             Tick = r.GetLong();
             X = r.GetDouble(); Y = r.GetDouble(); Z = r.GetDouble();
             Qx = r.GetFloat(); Qy = r.GetFloat(); Qz = r.GetFloat(); Qw = r.GetFloat();

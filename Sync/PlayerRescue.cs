@@ -110,12 +110,7 @@ namespace FollowingSeasCoop.Sync
             {
                 point = ship.transform.TransformPoint(_deckLocal) + Vector3.up * 0.3f;
             }
-            else
-            {
-                // Never stood on this ship in this session: above the wheel, which every ship has on deck.
-                GameObject wheel = WheelField?.GetValue(ship) as GameObject;
-                point = (wheel != null ? wheel.transform.position : ship.transform.position + Vector3.up * 2f) + Vector3.up * 1.5f;
-            }
+            else point = AboveWheel(ship);
 
             Move(player, point);
 
@@ -127,6 +122,13 @@ namespace FollowingSeasCoop.Sync
                 if (fade != null) fade.Reset();
             }
             Rescues++;
+        }
+
+        /// <summary>A spot on the deck of a ship never stood on: above the wheel, which every ship has.</summary>
+        internal static Vector3 AboveWheel(ShipHullMover ship)
+        {
+            GameObject wheel = WheelField?.GetValue(ship) as GameObject;
+            return (wheel != null ? wheel.transform.position : ship.transform.position + Vector3.up * 2f) + Vector3.up * 1.5f;
         }
 
         /// <summary>Puts the local player at a point of the scene, the way the game's own ladders do.</summary>

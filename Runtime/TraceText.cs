@@ -31,6 +31,8 @@ namespace FollowingSeasCoop.Runtime
                 case MsgType.AnimalState: return "Hunt";
                 case MsgType.CrewOrder:
                 case MsgType.CrewRoster: return "Crew";
+                case MsgType.ShipPlans:
+                case MsgType.ShipLaunch: return "Shipyard";
                 default: return null;
             }
         }
@@ -105,6 +107,14 @@ namespace FollowingSeasCoop.Runtime
                 case CrewRosterMsg m:
                     key = "roster";
                     value = "aboard " + string.Join(",", m.Aboard) + "  owned " + m.Owned.Length;
+                    break;
+                case ShipPlansMsg m:
+                    key = "plans";
+                    value = string.Join(" ", m.Lines);
+                    break;
+                case ShipLaunchMsg m:
+                    key = m.Ship;
+                    value = "at " + F(m.X) + " " + F(m.Z) + "  sails " + m.Sails.Length;
                     break;
                 case CrewOrderMsg m:
                     key = "order";

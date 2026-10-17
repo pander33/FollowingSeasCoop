@@ -32,6 +32,7 @@ namespace FollowingSeasCoop.Runtime
         internal HuntSync Hunt { get; private set; }
         internal RowboatSync Rowboat { get; private set; }
         internal CrewSync Crew { get; private set; }
+        internal ShipyardSync Shipyard { get; private set; }
 
         private Harmony _harmony;
         /// <summary>What the menu shows about the last thing that happened ("Connected", an error...).</summary>
@@ -69,6 +70,7 @@ namespace FollowingSeasCoop.Runtime
             Hunt = new HuntSync(Net);
             Rowboat = new RowboatSync(Net, Boats);
             Crew = new CrewSync(Net);
+            Shipyard = new ShipyardSync(Net);
             SceneManager.sceneUnloaded += Items.WorldUnloaded;
             SceneManager.sceneUnloaded += Hunt.WorldUnloaded;
 
@@ -88,6 +90,7 @@ namespace FollowingSeasCoop.Runtime
             PatchHealth.Install("Guest save block", () => SavePatches.InstallGuestSaveBlock(_harmony), log, required: true);
             PatchHealth.Install("Ship", () => BoatSync.Install(_harmony), log);
             PatchHealth.Install("Fast travel", () => BoatSync.InstallTravel(_harmony), log);
+            PatchHealth.Install("Shipyard", () => ShipyardSync.Install(_harmony), log);
             // Without it: no rope trimming by looking at a rope, no door or lantern from a guest, no guest pumping.
             PatchHealth.Install("Controls", () => ControlsSync.Install(_harmony), log);
             PatchHealth.Install("Item catalog", () => ItemCatalog.Install(_harmony), log);
@@ -368,6 +371,7 @@ namespace FollowingSeasCoop.Runtime
             Cargo.Clear();
             Rowboat.Clear();
             Crew.Clear();
+            Shipyard.Clear();
             InputBlock.Set(InputBlock.Reason.HostPause, false);
         }
 
@@ -388,6 +392,8 @@ namespace FollowingSeasCoop.Runtime
                     case MsgType.PlayerState: Players.OnPlayerState((PlayerStateMsg)msg, from); break;
                     case MsgType.BoatState: Boats.OnBoatState((BoatStateMsg)msg); break;
                     case MsgType.FastTravel: Boats.OnFastTravel((FastTravelMsg)msg, from); break;
+                    case MsgType.ShipPlans: Shipyard.OnPlans((ShipPlansMsg)msg, from); break;
+                    case MsgType.ShipLaunch: Shipyard.OnLaunch((ShipLaunchMsg)msg, from); break;
                     case MsgType.EnvState: Env.OnEnvState((EnvStateMsg)msg); break;
                     case MsgType.ControlRequest: Controls.OnRequest((ControlRequestMsg)msg, from); break;
                     case MsgType.ControlState: Controls.OnState((ControlStateMsg)msg); break;
@@ -404,6 +410,7 @@ namespace FollowingSeasCoop.Runtime
                             Tasks.SendAll(Net.PlayerNetIdForPeer(from));
                             Hunt.SendAll(Net.PlayerNetIdForPeer(from));
                             Crew.SendRoster(Net.PlayerNetIdForPeer(from));
+                            Shipyard.SendAll(Net.PlayerNetIdForPeer(from));
                             // Its ship is the one of the save again: every control as it stands now.
                             Controls.MarkAllDirty();
                         }
@@ -448,6 +455,7 @@ namespace FollowingSeasCoop.Runtime
                 Tasks.SendAll(netId);
                 Hunt.SendAll(netId);
                 Crew.SendRoster(netId);
+                Shipyard.SendAll(netId);
                 Notice = name + " joined";
                 Plugin.Log.LogInfo("[Coop] " + name + " is in the world");
             }
@@ -526,6 +534,11 @@ namespace FollowingSeasCoop.Runtime
                     catch (Exception e)
                     {
                         if (_updateErrors++ < 20) Plugin.Log.LogError("[Crew] Tick failed: " + e);
+                    }
+                    try { Shipyard.Tick(Boats); }
+                    catch (Exception e)
+                    {
+                        if (_updateErrors++ < 20) Plugin.Log.LogError("[Shipyard] Tick failed: " + e);
                     }
                     string carried = Items.PopNotice();
                     if (carried != null) Flash(carried);

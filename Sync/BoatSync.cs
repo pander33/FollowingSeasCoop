@@ -39,6 +39,7 @@ namespace FollowingSeasCoop.Sync
         // Snapshots received when the guest's chart moved its hull: a host paused since then sends none.
         private int _travelHoldReceived = -1;
         private bool _recenterPending;
+        private string _bufShip = "";
 
         // Diagnostics for the debug panel.
         public int Sent { get; private set; }
@@ -46,6 +47,9 @@ namespace FollowingSeasCoop.Sync
         public int Teleports { get; private set; }
         public float LastError { get; private set; }
         public bool Driving { get; private set; }
+
+        /// <summary>Guest: the kind of ship the host's last pose was of; empty before the first.</summary>
+        public string HostShip => _bufShip;
 
         /// <summary>Guest: this copy's hull follows the host. Read by the patches.</summary>
         public static bool GuestSlave { get; private set; }
@@ -97,7 +101,7 @@ namespace FollowingSeasCoop.Sync
             Rigidbody body = ship.GetComponent<Rigidbody>();
             if (body == null) return;
 
-            var msg = new BoatStateMsg { Tick = PhysicsTick };
+            var msg = new BoatStateMsg { Ship = ship.id ?? "", Tick = PhysicsTick };
             CoordSpace.LocalToReal(body.position, out msg.X, out msg.Y, out msg.Z);
             Quaternion rot = body.rotation;
             msg.Qx = rot.x; msg.Qy = rot.y; msg.Qz = rot.z; msg.Qw = rot.w;
@@ -122,6 +126,14 @@ namespace FollowingSeasCoop.Sync
             // A zero or damaged quaternion would poison the transform.
             float norm = rot.x * rot.x + rot.y * rot.y + rot.z * rot.z + rot.w * rot.w;
             if (norm < 0.5f || norm > 1.5f || float.IsNaN(norm)) return;
+            // A ship launched at a shipyard: the poses of the old one are no use.
+            if ((msg.Ship ?? "") != _bufShip)
+            {
+                // A pose of the old ship that arrived after the first of the new one.
+                if (_buf.Count > 0 && msg.Tick < _buf[_buf.Count - 1].Tick) return;
+                _buf.Clear();
+                _bufShip = msg.Ship ?? "";
+            }
             // Not interpolated across a jump: the hull would be placed at points in between.
             if (_buf.Count > 0)
             {
@@ -148,7 +160,8 @@ namespace FollowingSeasCoop.Sync
             Driving = false;
             if (_buf.Count == 0) return;
             ShipHullMover ship = GameAccess.ActiveShip();
-            if (ship == null) return;
+            // Until this copy has launched the host's new ship too.
+            if (ship == null || (ship.id ?? "") != _bufShip) { GuestVelocity = Vector3.zero; return; }
             Rigidbody body = ship.GetComponent<Rigidbody>();
             if (body == null) return;
             if (!Sample(PhysicsTick, out double x, out double y, out double z, out Quaternion rot)) return;
@@ -222,6 +235,16 @@ namespace FollowingSeasCoop.Sync
             return true;
         }
 
+        /// <summary>
+        /// Guest: this copy's hull was just put somewhere by the game. It stays there for a few
+        /// seconds, or longer until a new pose comes, rather than go back to the host's old pose.
+        /// </summary>
+        internal void HoldHull()
+        {
+            _travelHoldUntil = Time.unscaledTime + TravelHoldSeconds;
+            _travelHoldReceived = Received;
+        }
+
         /// <summary>Host: a guest's chart moved its hull; the host's goes the same way.</summary>
         public void OnFastTravel(FastTravelMsg msg, NetPeer from)
         {
@@ -262,6 +285,7 @@ namespace FollowingSeasCoop.Sync
         public void Clear()
         {
             _buf.Clear();
+            _bufShip = "";
             _travelHoldUntil = 0f;
             _travelHoldReceived = -1;
             _recenterPending = false;
@@ -326,8 +350,7 @@ namespace FollowingSeasCoop.Sync
                 if (ship == null || Vector3.Distance(ship.transform.position, __state) <= TeleportDistance) return;
                 CoordSpace.LocalToReal(ship.transform.position, out double x, out _, out double z);
                 boats._net.SendToHost(new FastTravelMsg { X = x, Z = z }, DeliveryMethod.ReliableOrdered);
-                boats._travelHoldUntil = Time.unscaledTime + TravelHoldSeconds;
-                boats._travelHoldReceived = boats.Received;
+                boats.HoldHull();
                 CoopTrace.Note("Boat", "fast travel", "ship", "asked of the host");
             }, error => Plugin.Log.LogError("[BoatSync] " + error));
         }

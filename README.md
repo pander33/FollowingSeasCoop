@@ -129,6 +129,8 @@ ends for everybody.
 - 🚣 The rowboat: anyone can launch and stow it; whoever sits in it rows it.
 - 🧑‍✈️ The ship's crew: hands taken aboard are the same for everybody, and a guest's orders in the
   crew panel are carried out.
+- ⚓ The shipyard: plans, payments and materials are shared, and a ship launched by anyone becomes
+  everybody's ship. Whoever stood on the old deck is put aboard the new one.
 
 **Not shared:** living animals (each player sees their own until one is shot), a fish in another
 player's hand, another player's gunshot, and the view through another player's spyglass.

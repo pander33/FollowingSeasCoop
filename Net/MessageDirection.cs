@@ -31,6 +31,8 @@ namespace FollowingSeasCoop.Net
                 case MsgType.CrewRoster:
                 case MsgType.ModData:
                 case MsgType.FastTravel:
+                case MsgType.ShipPlans:
+                case MsgType.ShipLaunch:
                     return true;
                 default:
                     return false;
@@ -69,6 +71,8 @@ namespace FollowingSeasCoop.Net
                 case MsgType.CrewState:
                 case MsgType.CrewRoster:
                 case MsgType.ModData:
+                case MsgType.ShipPlans:
+                case MsgType.ShipLaunch:
                     return true;
                 default:
                     return false;

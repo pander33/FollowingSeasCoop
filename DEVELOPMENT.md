@@ -115,6 +115,7 @@ so it lines up on every copy whatever that copy's origin is.
 | Leaks, trolling lines, fish hold, catch records | More control kinds and one more store; only the host rolls for leaks and bites. |
 | Hunting | A shot animal and its harvest are told to all; living animals are each copy's own. |
 | Rowboat | Launching is a control; in the water it is moved by the copy of the player in it. |
+| Shipyard | The ship plans and what was paid or delivered for them are polled and sent line by line. A launch runs the game's own code on the launching copy; the others load the same ship scene and put the hull at the same point, a guest's launch through the host. |
 | Crew | A guest's orders are carried out by the host's crew; the looks and the roster are sent to guests. |
 | Player menu | A Co-op button and page made of copies of the game's own buttons; LAN list of hosted games. |
 | Steam | A host is also reachable by its Steam id: Steam P2P datagrams tunnelled to LiteNetLib through loopback. Rich presence lists hosting friends in the join dialog and gives Steam's own Join Game and invites. Friends-only admission. |
@@ -163,3 +164,4 @@ wire protocol did.
 | 2026-10-15 | 13 | A channel for other mods (`ModChannel`, message `ModData`): Following Seas Omens shows the host's night events to its guests. |
 | 2026-10-17 | 13 | `ModChannel` for Omens: addressed channels (`RegisterPeer`, `Members`, `SessionIdentity`) and a number carried with a trolled fish. |
 | 2026-10-17 | 14 | The lantern in another player's hand gives light; a guest's fast travel by the chart moves the host's ship. |
+| 2026-10-17 | 15 | The shipyard: shared ship plans and payments; a ship launched by anyone is everybody's. The hull's pose names its ship. |
