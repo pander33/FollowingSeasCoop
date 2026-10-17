@@ -41,6 +41,7 @@ namespace FollowingSeasCoop.Net
         CrewState = 31,
         CrewRoster = 32,
         ModData = 33,
+        FastTravel = 34,
     }
 
     public interface INetMessage
@@ -427,6 +428,26 @@ namespace FollowingSeasCoop.Net
             Qx = r.GetFloat(); Qy = r.GetFloat(); Qz = r.GetFloat(); Qw = r.GetFloat();
             Vx = r.GetFloat(); Vy = r.GetFloat(); Vz = r.GetFloat();
             Wx = r.GetFloat(); Wy = r.GetFloat(); Wz = r.GetFloat();
+        }
+    }
+
+    /// <summary>
+    /// Guest → host: the game's fast travel by the chart moved this guest's hull to a point in real
+    /// space; the host moves its own hull there.
+    /// </summary>
+    public sealed class FastTravelMsg : INetMessage
+    {
+        public MsgType Type => MsgType.FastTravel;
+        public double X, Z;
+
+        public void Serialize(NetDataWriter w)
+        {
+            w.Put(X); w.Put(Z);
+        }
+
+        public void Deserialize(NetDataReader r)
+        {
+            X = r.GetDouble(); Z = r.GetDouble();
         }
     }
 

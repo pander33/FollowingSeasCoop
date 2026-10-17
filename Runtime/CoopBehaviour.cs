@@ -87,6 +87,7 @@ namespace FollowingSeasCoop.Runtime
             PatchHealth.Install("Guest world", () => SavePatches.InstallGuestWorld(_harmony), log, required: true);
             PatchHealth.Install("Guest save block", () => SavePatches.InstallGuestSaveBlock(_harmony), log, required: true);
             PatchHealth.Install("Ship", () => BoatSync.Install(_harmony), log);
+            PatchHealth.Install("Fast travel", () => BoatSync.InstallTravel(_harmony), log);
             // Without it: no rope trimming by looking at a rope, no door or lantern from a guest, no guest pumping.
             PatchHealth.Install("Controls", () => ControlsSync.Install(_harmony), log);
             PatchHealth.Install("Item catalog", () => ItemCatalog.Install(_harmony), log);
@@ -386,6 +387,7 @@ namespace FollowingSeasCoop.Runtime
                     case MsgType.ClientWorldLoaded: HostOnWorldLoaded((ClientWorldLoadedMsg)msg, from); break;
                     case MsgType.PlayerState: Players.OnPlayerState((PlayerStateMsg)msg, from); break;
                     case MsgType.BoatState: Boats.OnBoatState((BoatStateMsg)msg); break;
+                    case MsgType.FastTravel: Boats.OnFastTravel((FastTravelMsg)msg, from); break;
                     case MsgType.EnvState: Env.OnEnvState((EnvStateMsg)msg); break;
                     case MsgType.ControlRequest: Controls.OnRequest((ControlRequestMsg)msg, from); break;
                     case MsgType.ControlState: Controls.OnState((ControlStateMsg)msg); break;

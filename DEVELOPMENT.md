@@ -104,11 +104,11 @@ so it lines up on every copy whatever that copy's origin is.
 | Session | Handshake with protocol check, roster, clock sync, up to `Network/MaxClients` guests. |
 | World | The host captures the game's save object with no file, sends it gzip-packed in chunks; the guest gives it to the game's loader. The host is paused while a guest loads. A guest never writes a save. |
 | Players | Pose 20 times a second, hull-local aboard, real space elsewhere; avatars are the game's crew models. |
-| Ship | The host sends the hull's pose and velocities; a guest's hull is kinematic and follows the buffered poses. |
+| Ship | The host sends the hull's pose and velocities; a guest's hull is kinematic and follows the buffered poses. A guest's fast travel by the chart is sent to the host, which moves its hull there; after a jump that long every copy moves its origin and reloads the islands. |
 | Sea and sky | Weather type, wind, wave spectrum, ocean clock, date and time, four times a second. |
 | Controls | Wheel, reefs, rig ropes, winches, doors, lanterns, ballast, kedge anchor, mooring lines, pump — as state, not input. One hand at a time on what is held for a while. |
 | Things | Barrels and sacks: a registry keyed by scene path; one mover at a time sends poses, the others draw it from a buffer; stand-ins where a copy lacks the object. |
-| Tools in hand | The active inventory slot and hammer blows; shown as a renderer-only copy of the local tool. |
+| Tools in hand | The active inventory slot and hammer blows; shown as a renderer-only copy of the local tool, the lantern with its light and flame. |
 | Household | Money, stores, debts, journal: polled, sent as numbered differences, the host's numbers win. |
 | Contracts | Travel as the game's own save strings; the reward is counted on the delivering copy only. |
 | Cargo | A crate is named by its box and its half-metre cell; one player at a time at the panel. |
@@ -162,3 +162,4 @@ wire protocol did.
 | 2026-10-12 | 12 | Dev buttons: water in the hull, harvesting, delivering and abandoning a contract, a hand aboard or ashore, a guest's world loaded again. |
 | 2026-10-15 | 13 | A channel for other mods (`ModChannel`, message `ModData`): Following Seas Omens shows the host's night events to its guests. |
 | 2026-10-17 | 13 | `ModChannel` for Omens: addressed channels (`RegisterPeer`, `Members`, `SessionIdentity`) and a number carried with a trolled fish. |
+| 2026-10-17 | 14 | The lantern in another player's hand gives light; a guest's fast travel by the chart moves the host's ship. |

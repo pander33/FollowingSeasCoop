@@ -30,6 +30,7 @@ namespace FollowingSeasCoop.Net
                 case MsgType.CrewOrder:
                 case MsgType.CrewRoster:
                 case MsgType.ModData:
+                case MsgType.FastTravel:
                     return true;
                 default:
                     return false;

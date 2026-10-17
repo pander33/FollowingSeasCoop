@@ -142,6 +142,8 @@ player's hand, another player's gunshot, and the view through another player's s
 - **When the host pauses**, guests cannot move and see a message saying so.
 - **If you drown**, you are put back on deck a few seconds later.
 - **Left behind in the water?** Press **Esc**, choose **Co-op**, then **Return to the ship**.
+- **Fast travel by the chart** takes the ship and everyone aboard, whoever starts it. A player
+  ashore, in the rowboat or in the water is left behind.
 - **Only the host can use the ship's Reset.**
 - Sails may twitch a little on a guest's screen. This is only how it looks.
 

@@ -3,6 +3,8 @@ using FollowingSeasCoop.Runtime;
 using HarmonyLib;
 using LiteNetLib;
 using UnityEngine;
+using UnityEngine.SceneManagement;
+using twoloop;
 
 namespace FollowingSeasCoop.Sync
 {
@@ -28,10 +30,15 @@ namespace FollowingSeasCoop.Sync
         /// <summary>Further than this from the host's pose the hull is placed, not moved through the water.</summary>
         private const float TeleportDistance = 25f;
         private const float MaxExtrapolateMs = 250f;
+        private const float TravelHoldSeconds = 5f;
 
         private readonly CoopNet _net;
         private readonly SnapshotBuffer<Snap> _buf = new SnapshotBuffer<Snap>(s => s.Tick, 32);
         private float _nextSendAt;
+        private float _travelHoldUntil;
+        // Snapshots received when the guest's chart moved its hull: a host paused since then sends none.
+        private int _travelHoldReceived = -1;
+        private bool _recenterPending;
 
         // Diagnostics for the debug panel.
         public int Sent { get; private set; }
@@ -62,6 +69,12 @@ namespace FollowingSeasCoop.Sync
             if (!_physicsClockSet || System.Math.Abs(offset - _physicsToHostMs) > 50.0) _physicsToHostMs = offset;
             else _physicsToHostMs += (offset - _physicsToHostMs) * 0.05;
             _physicsClockSet = true;
+
+            if (_recenterPending)
+            {
+                _recenterPending = false;
+                Recenter();
+            }
         }
 
         internal long PhysicsTick => _physicsClockSet
@@ -109,6 +122,18 @@ namespace FollowingSeasCoop.Sync
             // A zero or damaged quaternion would poison the transform.
             float norm = rot.x * rot.x + rot.y * rot.y + rot.z * rot.z + rot.w * rot.w;
             if (norm < 0.5f || norm > 1.5f || float.IsNaN(norm)) return;
+            // Not interpolated across a jump: the hull would be placed at points in between.
+            if (_buf.Count > 0)
+            {
+                Snap last = _buf[_buf.Count - 1];
+                double dx = msg.X - last.X, dz = msg.Z - last.Z;
+                if (dx * dx + dz * dz > TeleportDistance * TeleportDistance)
+                {
+                    // A pose from before the jump that arrived after it.
+                    if (msg.Tick < last.Tick) return;
+                    _buf.Clear();
+                }
+            }
             _buf.Push(new Snap
             {
                 Tick = msg.Tick, X = msg.X, Y = msg.Y, Z = msg.Z,
@@ -134,6 +159,13 @@ namespace FollowingSeasCoop.Sync
 
             Vector3 target = CoordSpace.RealToLocal(x, y, z);
             LastError = Vector3.Distance(body.position, target);
+            if (LastError <= TeleportDistance) _travelHoldReceived = -1;
+            else if (_travelHoldReceived >= 0 && (Time.unscaledTime < _travelHoldUntil || Received == _travelHoldReceived))
+            {
+                // The hull stands where the chart put it; the host's old velocity would slide the player.
+                GuestVelocity = Vector3.zero;
+                return;
+            }
             if (LastError > TeleportDistance)
             {
                 // Far off (the first pose after a join, or a jump on the host): place the hull the way
@@ -143,6 +175,8 @@ namespace FollowingSeasCoop.Sync
                 body.rotation = rot;
                 Physics.SyncTransforms();
                 Teleports++;
+                // The game's own jumps (a load, a fast travel) move the origin and reload the islands.
+                _recenterPending = true;
                 return;
             }
             // MovePosition on a kinematic body keeps render interpolation and drags the jointed parts
@@ -188,10 +222,49 @@ namespace FollowingSeasCoop.Sync
             return true;
         }
 
+        /// <summary>Host: a guest's chart moved its hull; the host's goes the same way.</summary>
+        public void OnFastTravel(FastTravelMsg msg, NetPeer from)
+        {
+            if (!_net.IsHost) return;
+            ShipHullMover ship = GameAccess.ActiveShip();
+            Rigidbody body = ship != null ? ship.GetComponent<Rigidbody>() : null;
+            if (body == null)
+            {
+                Plugin.Log.LogWarning("[BoatSync] Fast travel of player " + _net.PlayerNetIdForPeer(from) + " not done: no active ship");
+                return;
+            }
+            InteractionController controller = InteractionController.interactionInstance;
+            if (controller != null && controller.isKedging) controller.ExternalStopKedging();
+
+            Vector3 target = CoordSpace.RealToLocal(msg.X, 0.0, msg.Z);
+            target.y = ship.transform.position.y;
+            body.isKinematic = true;
+            ship.transform.position = target;
+            body.isKinematic = false;
+            Recenter();
+            Plugin.Log.LogInfo("[BoatSync] Fast travel of player " + _net.PlayerNetIdForPeer(from) + " to " +
+                               msg.X.ToString("F0") + ", " + msg.Z.ToString("F0"));
+            CoopTrace.Note("Boat", "fast travel", "ship", "of player " + _net.PlayerNetIdForPeer(from));
+        }
+
+        // What BeginFastTravel does after it moves the hull.
+        private static void Recenter()
+        {
+            if (OriginShift.singleton != null) OriginShift.Recenter();
+            foreach (GameObject root in SceneManager.GetSceneByBuildIndex(GameAccess.WorldScene).GetRootGameObjects())
+            {
+                Island island = root.GetComponent<Island>();
+                if (island != null) island.RecalculateData();
+            }
+        }
+
         /// <summary>The session ended. A guest's world is unloaded next, so its hull is not restored.</summary>
         public void Clear()
         {
             _buf.Clear();
+            _travelHoldUntil = 0f;
+            _travelHoldReceived = -1;
+            _recenterPending = false;
             GuestSlave = false;
             GuestVelocity = Vector3.zero;
             Driving = false;
@@ -219,6 +292,44 @@ namespace FollowingSeasCoop.Sync
             harmony.Patch(AccessTools.Method(typeof(PlayerHandler), "FixedUpdate")
                               ?? throw new System.MissingMethodException("PlayerHandler", "FixedUpdate"),
                           prefix: new HarmonyMethod(typeof(BoatSync), nameof(PlayerFixedPrefix)));
+        }
+
+        public static void InstallTravel(Harmony harmony)
+        {
+            harmony.Patch(AccessTools.Method(typeof(Map2Controller), "BeginFastTravel")
+                              ?? throw new System.MissingMethodException("Map2Controller", "BeginFastTravel"),
+                          prefix: new HarmonyMethod(typeof(BoatSync), nameof(TravelPrefix)),
+                          postfix: new HarmonyMethod(typeof(BoatSync), nameof(TravelPostfix)));
+        }
+
+        // A guest's chart runs the game's whole fast travel on the guest's copy (checks, provisions,
+        // origin, islands); the provisions reach the host through EconomySync. Only the hull's new
+        // place is sent, and the guest's hull waits there for the host's to arrive.
+        private static void TravelPrefix(out Vector3 __state)
+        {
+            Vector3 before = Vector3.zero;
+            PatchGuard.Run(() =>
+            {
+                ShipHullMover ship = GameAccess.ActiveShip();
+                if (ship != null) before = ship.transform.position;
+            }, error => Plugin.Log.LogError("[BoatSync] " + error));
+            __state = before;
+        }
+
+        private static void TravelPostfix(Vector3 __state)
+        {
+            PatchGuard.Run(() =>
+            {
+                BoatSync boats = CoopBehaviour.Instance != null ? CoopBehaviour.Instance.Boats : null;
+                if (boats == null || !boats._net.IsClient) return;
+                ShipHullMover ship = GameAccess.ActiveShip();
+                if (ship == null || Vector3.Distance(ship.transform.position, __state) <= TeleportDistance) return;
+                CoordSpace.LocalToReal(ship.transform.position, out double x, out _, out double z);
+                boats._net.SendToHost(new FastTravelMsg { X = x, Z = z }, DeliveryMethod.ReliableOrdered);
+                boats._travelHoldUntil = Time.unscaledTime + TravelHoldSeconds;
+                boats._travelHoldReceived = boats.Received;
+                CoopTrace.Note("Boat", "fast travel", "ship", "asked of the host");
+            }, error => Plugin.Log.LogError("[BoatSync] " + error));
         }
 
         // The game's "Reset" key puts the ship into a mode where the player moves it by hand. On a

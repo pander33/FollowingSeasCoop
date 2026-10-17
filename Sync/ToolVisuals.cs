@@ -16,7 +16,8 @@ namespace FollowingSeasCoop.Sync
     /// meshes taken off: no scripts (they read input, move the camera, mend leaks, change the sky),
     /// no cameras, sounds, bodies or colliders, and none of the first-person arms. The game builds
     /// a tool in the space of its owner's camera, so the copy is put at the other player's eye,
-    /// turned the way that player looks — where its owner sees it.
+    /// turned the way that player looks — where its owner sees it. A tool with a light that is not
+    /// on the tool's own layer (the lantern) keeps its lights and particles: the flame.
     /// </summary>
     internal sealed class ToolVisuals
     {
@@ -159,6 +160,10 @@ namespace FollowingSeasCoop.Sync
             var holder = new GameObject("CoopToolHolder");
             holder.SetActive(false);
             GameObject copy;
+            // The compass's light is on the tool's layer and lights only the tool; the lantern's lights the world.
+            bool lit = false;
+            foreach (Light light in item.GetComponentsInChildren<Light>(true))
+                if (light.gameObject.layer != toolLayer) lit = true;
             try
             {
                 copy = UnityEngine.Object.Instantiate(item, holder.transform);
@@ -166,6 +171,8 @@ namespace FollowingSeasCoop.Sync
                 {
                     int own = renderer.gameObject.layer;
                     if (own != 0 && own != toolLayer) UnityEngine.Object.DestroyImmediate(renderer);
+                    // HandSelector gives the tool's meshes probes of its own; the copy has no HandSelector.
+                    else renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.BlendProbes;
                 }
                 // A component cannot be removed while another one requires it (Unity logs an error
                 // and leaves it). The first pass takes what requires — scripts, joints, filters —
@@ -175,13 +182,19 @@ namespace FollowingSeasCoop.Sync
                     bool removed = false;
                     foreach (Component component in copy.GetComponentsInChildren<Component>(true))
                     {
-                        if (component == null || Keep(component) || (pass == 0 && Required(component))) continue;
+                        if (component == null || Keep(component) || (lit && KeepLit(component)) || (pass == 0 && Required(component))) continue;
                         // Goes with its particle system.
                         if (component.GetType().Name == "ParticleSystemRenderer" && component.GetComponent("ParticleSystem") != null) continue;
                         UnityEngine.Object.DestroyImmediate(component);
                         removed = true;
                     }
                     if (!removed && pass > 0) break;
+                }
+                // A first-person light may light only the tool's own layer; the copy is in the world.
+                foreach (Light light in copy.GetComponentsInChildren<Light>(true))
+                {
+                    light.shadows = LightShadows.None;
+                    light.cullingMask = ~0;
                 }
                 foreach (Transform t in copy.GetComponentsInChildren<Transform>(true))
                 {
@@ -215,6 +228,12 @@ namespace FollowingSeasCoop.Sync
         private static bool Keep(Component component)
         {
             return component is Transform || component is MeshRenderer || component is MeshFilter || component is LODGroup;
+        }
+
+        private static bool KeepLit(Component component)
+        {
+            string name = component.GetType().Name;
+            return component is Light || name == "UniversalAdditionalLightData" || name == "ParticleSystem" || name == "ParticleSystemRenderer";
         }
 
         // -----------------------------------------------------------------
