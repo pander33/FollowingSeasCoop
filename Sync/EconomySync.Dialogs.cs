@@ -32,6 +32,7 @@ namespace FollowingSeasCoop.Sync
         }
 
         private static DialogFields s_trade, s_transfer;
+        private static FieldInfo s_fishHold, s_fishLeft, s_fishStart, s_fishChange;
 
         private static DialogFields Fields(Type type, bool transfer)
         {
@@ -69,6 +70,17 @@ namespace FollowingSeasCoop.Sync
             harmony.Patch(AccessTools.Method(typeof(TransferProvisionsDialog), "CompleteTransaction")
                               ?? throw new MissingMethodException(nameof(TransferProvisionsDialog), "CompleteTransaction"),
                           prefix: new HarmonyMethod(typeof(EconomySync), nameof(TransferPrefix)));
+        }
+
+        public static void InstallFishSale(Harmony harmony)
+        {
+            s_fishHold = Need(typeof(SellFishDialog), "fishCargoManager");
+            s_fishLeft = Need(typeof(SellFishDialog), "qsAmt");
+            s_fishStart = Need(typeof(SellFishDialog), "startQSAmt");
+            s_fishChange = Need(typeof(SellFishDialog), "moneyChangeAmt");
+            harmony.Patch(AccessTools.Method(typeof(SellFishDialog), "CompleteTransaction")
+                              ?? throw new MissingMethodException(nameof(SellFishDialog), "CompleteTransaction"),
+                          prefix: new HarmonyMethod(typeof(EconomySync), nameof(SellFishPrefix)));
         }
 
         // The dialog's figure and its starting figure both move by what the stores did meanwhile.
@@ -119,6 +131,27 @@ namespace FollowingSeasCoop.Sync
                     slider.SetValueWithoutNotify(target);
                     s_transfer.StoredStart[i].SetValue(__instance, shore[i]);
                 }
+            }, error => Plugin.Log.LogError("[Economy] " + error));
+        }
+
+        // The fish dialog writes the hold's count from the tonnes left in it when it opened: a fish
+        // put in or sold by another player meanwhile would be undone. The fish this player sold
+        // are taken from the hold as it is now; the price stays the dialog's. The slider cannot go
+        // above the hold, so the dialog only ever sells: nothing to sell is its one refusal, after
+        // which it stays open and must keep its own figures.
+        private static void SellFishPrefix(SellFishDialog __instance)
+        {
+            PatchGuard.Run(() =>
+            {
+                if ((float)s_fishChange.GetValue(__instance) <= 0f) return;
+                if (!(s_fishHold.GetValue(__instance) is FishCargoManager hold) || hold.unitWeight <= 0f) return;
+                int start = Mathf.RoundToInt((float)s_fishStart.GetValue(__instance) / hold.unitWeight * 1000f);
+                if (start == hold.currentFishCount) return;
+                // As the game counts it: the whole fish below the tonnes chosen.
+                int sold = start - (int)((float)s_fishLeft.GetValue(__instance) / hold.unitWeight * 1000f);
+                int left = Math.Max(0, hold.currentFishCount - sold);
+                s_fishLeft.SetValue(__instance, (left + 0.5f) * hold.unitWeight / 1000f);
+                s_fishStart.SetValue(__instance, hold.currentFishCount * hold.unitWeight / 1000f);
             }, error => Plugin.Log.LogError("[Economy] " + error));
         }
     }

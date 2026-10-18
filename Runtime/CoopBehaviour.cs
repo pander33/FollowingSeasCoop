@@ -103,6 +103,7 @@ namespace FollowingSeasCoop.Runtime
             // Without it a guest's own timer would eat from the shared stores a second time.
             PatchHealth.Install("Economy", () => EconomySync.Install(_harmony), log);
             PatchHealth.Install("Trade dialogs", () => EconomySync.InstallDialogs(_harmony), log);
+            PatchHealth.Install("Fish sale", () => EconomySync.InstallFishSale(_harmony), log);
             // Without it the hold is not shared: two cargo panels at once would lose a task's counts.
             PatchHealth.Install("Cargo", () => CargoSync.Install(_harmony), log);
             // Without it leaks and trolling lines are not shared: a guest's copy would roll its own.
