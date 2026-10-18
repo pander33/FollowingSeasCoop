@@ -109,7 +109,7 @@ so it lines up on every copy whatever that copy's origin is.
 | Controls | Wheel, reefs, rig ropes, winches, doors, lanterns, ballast, kedge anchor, mooring lines, pump — as state, not input. One hand at a time on what is held for a while. |
 | Things | Barrels and sacks: a registry keyed by scene path; one mover at a time sends poses, the others draw it from a buffer; stand-ins where a copy lacks the object. |
 | Tools in hand | The active inventory slot and hammer blows; shown as a renderer-only copy of the local tool, the lantern with its light and flame. |
-| Household | Money, stores aboard and ashore, debts, journal: polled, sent as numbered differences (debts per creditor), the host's numbers win. A trade or transfer dialog applies what the player chose to the stores as they are when it is confirmed, not as they were when it opened. |
+| Household | Money, stores aboard and ashore, debts, the journal's contract and world pages (not its events): polled, sent as numbered differences (debts per creditor), the host's numbers win. A trade or transfer dialog applies what the player chose to the stores as they are when it is confirmed, not as they were when it opened. |
 | Chart | Courses and markers travel as the game's own lines, which went and which came; a closed chart rebuilds itself from them when it next opens. |
 | Contracts | Travel as the game's own save strings; the reward is counted on the delivering copy only. |
 | Cargo | A crate is named by its box and its half-metre cell; one player at a time at the panel. |
@@ -167,3 +167,4 @@ wire protocol did.
 | 2026-10-17 | 14 | The lantern in another player's hand gives light; a guest's fast travel by the chart moves the host's ship. |
 | 2026-10-17 | 15 | The shipyard: shared ship plans and payments; a ship launched by anyone is everybody's. The hull's pose names its ship. |
 | 2026-10-17 | 16 | Audit fixes: the store ashore, debts as differences, trade and payment dialogs opened before another player's change, shipyard payments made at once, the chart's courses and markers, a barrel bought by two hands at once, late packets of players, the rowboat and things, a refused hand on a control. |
+| 2026-10-18 | 17 | The journal's world pages (notes read, places found) are shared; a guest whose world was loaded again gets the journal lines written since it joined. |

@@ -152,18 +152,23 @@ namespace FollowingSeasCoop.Sync
 
         private void Write(GameData data, MapChangeMsg msg)
         {
+            Apply(data.mapPlots, data.mapMarkers, msg);
+            if (_dp != null && _dp.gameData == data) Remember(data);
+        }
+
+        private static void Apply(List<string> plots, List<string> markers, MapChangeMsg msg)
+        {
             if (msg.Full)
             {
-                data.mapPlots.Clear(); data.mapMarkers.Clear();
+                plots.Clear(); markers.Clear();
             }
             else
             {
-                foreach (string line in msg.RemovePlots) data.mapPlots.Remove(line);
-                foreach (string line in msg.RemoveMarkers) data.mapMarkers.Remove(line);
+                foreach (string line in msg.RemovePlots) plots.Remove(line);
+                foreach (string line in msg.RemoveMarkers) markers.Remove(line);
             }
-            foreach (string line in msg.AddPlots) if (!data.mapPlots.Contains(line)) data.mapPlots.Add(line);
-            foreach (string line in msg.AddMarkers) if (!data.mapMarkers.Contains(line)) data.mapMarkers.Add(line);
-            if (_dp != null && _dp.gameData == data) Remember(data);
+            foreach (string line in msg.AddPlots) if (!plots.Contains(line)) plots.Add(line);
+            foreach (string line in msg.AddMarkers) if (!markers.Contains(line)) markers.Add(line);
         }
 
         private static IEnumerable<Map2Controller> Charts() =>
@@ -220,7 +225,12 @@ namespace FollowingSeasCoop.Sync
             DataPersistenceManager dp = GameAccess.Dp;
             if (!_net.IsHost || !Ready(dp)) return;
             Look(dp);
-            var all = new MapChangeMsg { Full = true, AddPlots = dp.gameData.mapPlots.ToArray(), AddMarkers = dp.gameData.mapMarkers.ToArray() };
+            // With what waits for the host's own chart to close: the guest was sent it already, and
+            // a whole chart without it would take it away there.
+            var plots = new List<string>(dp.gameData.mapPlots);
+            var markers = new List<string>(dp.gameData.mapMarkers);
+            foreach (MapChangeMsg waiting in _waiting) Apply(plots, markers, waiting);
+            var all = new MapChangeMsg { Full = true, AddPlots = plots.ToArray(), AddMarkers = markers.ToArray() };
             foreach (MapChangeMsg part in Parts(all)) _net.SendTo(player, part, DeliveryMethod.ReliableOrdered);
         }
 

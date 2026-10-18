@@ -50,7 +50,8 @@ namespace FollowingSeasCoop.Sync
         private bool _hasStores;
         private readonly float[] _shore = new float[EconomyWire.Stores];
         private Dictionary<string, float> _debts = new Dictionary<string, float>(StringComparer.Ordinal);
-        private int _logs;
+        private int _logs, _worldLogs;
+        private bool _warnedLong;
         private DataPersistenceManager _dp;
         private float _nextPollAt;
         private uint _seq;
@@ -257,7 +258,7 @@ namespace FollowingSeasCoop.Sync
             _pending.Clear();
             Base(dp);
             if (_net.IsClient)
-                _net.SendToHost(new EconomyDeltaMsg { Seq = ++_seq, Resync = true }, DeliveryMethod.ReliableOrdered);
+                _net.SendToHost(ResyncMsg(dp.gameData), DeliveryMethod.ReliableOrdered);
         }
 
         private void Base(DataPersistenceManager dp)
@@ -272,6 +273,7 @@ namespace FollowingSeasCoop.Sync
             ReadShore(data, _shore);
             _debts = ReadDebts(data.debts);
             _logs = data.logs != null ? data.logs.Count : 0;
+            _worldLogs = data.worldLogs != null ? data.worldLogs.Count : 0;
             FishCargoManager hold = FishHold();
             _hasFish = hold != null;
             _fishHold = hold;
@@ -361,16 +363,8 @@ namespace FollowingSeasCoop.Sync
                 changed = true;
             }
 
-            if (data.logs != null)
-            {
-                if (data.logs.Count < _logs) _logs = data.logs.Count;
-                for (; _logs < data.logs.Count; _logs++)
-                {
-                    var line = new JournalLineMsg { Line = data.logs[_logs] };
-                    if (_net.IsHost) _net.Broadcast(line, DeliveryMethod.ReliableOrdered);
-                    else _net.SendToHost(line, DeliveryMethod.ReliableOrdered);
-                }
-            }
+            SendNewLines(data.logs, ref _logs, false);
+            SendNewLines(data.worldLogs, ref _worldLogs, true);
 
             if (data.fishRecords != null)
                 foreach (string line in data.fishRecords)
@@ -432,9 +426,15 @@ namespace FollowingSeasCoop.Sync
         /// </summary>
         public void AskAgain()
         {
-            if (!_net.IsClient || _dp == null) return;
-            _net.SendToHost(new EconomyDeltaMsg { Seq = ++_seq, Resync = true }, DeliveryMethod.ReliableOrdered);
+            if (!_net.IsClient || _dp == null || _dp.gameData == null) return;
+            _net.SendToHost(ResyncMsg(_dp.gameData), DeliveryMethod.ReliableOrdered);
         }
+
+        private EconomyDeltaMsg ResyncMsg(GameData data) => new EconomyDeltaMsg
+        {
+            Seq = ++_seq, Resync = true,
+            Logs = data.logs != null ? data.logs.Count : 0, WorldLogs = data.worldLogs != null ? data.worldLogs.Count : 0,
+        };
 
         public void OnDelta(EconomyDeltaMsg msg, NetPeer from)
         {
@@ -473,6 +473,8 @@ namespace FollowingSeasCoop.Sync
             }
             _acked[player] = msg.Seq;
             SendState();
+            // A world loaded again is the one the guest joined with: the lines written since are not in it.
+            if (msg.Resync) SendJournal(player, data, msg.Logs, msg.WorldLogs);
         }
 
         // -----------------------------------------------------------------
@@ -534,14 +536,69 @@ namespace FollowingSeasCoop.Sync
         // Journal
         // -----------------------------------------------------------------
 
+        // The lines the local game added since the last look.
+        private void SendNewLines(List<string> lines, ref int known, bool world)
+        {
+            if (lines == null) return;
+            if (lines.Count < known) known = lines.Count;
+            for (; known < lines.Count; known++)
+            {
+                if (!Fits(lines[known])) continue;
+                var line = new JournalLineMsg { World = world, Line = lines[known] };
+                if (_net.IsHost) _net.Broadcast(line, DeliveryMethod.ReliableOrdered);
+                else _net.SendToHost(line, DeliveryMethod.ReliableOrdered);
+            }
+        }
+
+        // A line cut short would be another line to the receiver: it is not sent at all.
+        private bool Fits(string line)
+        {
+            if (line != null && line.Length <= JournalLineMsg.MaxLine) return true;
+            if (!_warnedLong) Plugin.Log.LogWarning("[Economy] A journal line is longer than " + JournalLineMsg.MaxLine + " characters and is not shared");
+            _warnedLong = true;
+            return false;
+        }
+
+        // Host: a world loaded again is the one the guest joined with, whose lines begin the host's
+        // lists too (lines are only ever added); the guest is sent the ones after them.
+        private void SendJournal(uint player, GameData data, int logs, int worldLogs)
+        {
+            SendFrom(player, data.logs, logs, false);
+            SendFrom(player, data.worldLogs, worldLogs, true);
+        }
+
+        private void SendFrom(uint player, List<string> lines, int from, bool world)
+        {
+            if (lines == null) return;
+            for (int i = Math.Max(0, from); i < lines.Count; i++)
+                if (Fits(lines[i])) _net.SendTo(player, new JournalLineMsg { World = world, Line = lines[i] }, DeliveryMethod.ReliableOrdered);
+        }
+
+        // The game itself knows a page of the world by its title: a note read twice is one page.
+        private static bool HasLine(List<string> lines, string line, bool world)
+        {
+            if (!world) return lines.Contains(line);
+            string title = Title(line);
+            return lines.Exists(known => known != null && Title(known) == title);
+        }
+
+        private static string Title(string line)
+        {
+            int cut = line.IndexOf('=');
+            return cut < 0 ? line : line.Substring(0, cut);
+        }
+
         public void OnJournal(JournalLineMsg msg, NetPeer from)
         {
             DataPersistenceManager dp = GameAccess.Dp;
-            if (dp == null || dp.gameData == null || dp.gameData.logs == null) return;
+            if (dp == null || dp.gameData == null) return;
+            List<string> lines = msg.World ? dp.gameData.worldLogs : dp.gameData.logs;
+            if (lines == null) return;
             // The local lines first, so this one is not sent back as a local line.
             Look(dp);
-            dp.gameData.logs.Add(msg.Line);
-            _logs = dp.gameData.logs.Count;
+            if (HasLine(lines, msg.Line, msg.World)) return;
+            lines.Add(msg.Line);
+            if (msg.World) _worldLogs = lines.Count; else _logs = lines.Count;
             if (_net.IsHost)
                 _net.Broadcast(msg, DeliveryMethod.ReliableOrdered, readyOnly: true, exceptNetId: _net.PlayerNetIdForPeer(from));
         }
@@ -599,6 +656,7 @@ namespace FollowingSeasCoop.Sync
                 foreach (string line in data.fishRecords)
                     if (ParseRecord(line, out string id, out float weight)) d.Line("Household", "record " + id, StateDump.F(weight), 0.01f);
             d.Line("Household", "journal lines", (data.logs != null ? data.logs.Count : 0).ToString());
+            d.Line("Household", "journal lines of the world", (data.worldLogs != null ? data.worldLogs.Count : 0).ToString());
             d.Info("Household", "differences not counted by the host yet", _pending.Count.ToString());
         }
 

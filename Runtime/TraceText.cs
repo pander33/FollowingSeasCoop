@@ -90,7 +90,7 @@ namespace FollowingSeasCoop.Runtime
                     break;
                 case EconomyDeltaMsg m:
                     key = "difference " + m.Seq;
-                    value = m.Resync ? "asks for everything again"
+                    value = m.Resync ? "asks for everything again, has journal lines " + m.Logs + " / world " + m.WorldLogs
                           : "money " + F(m.Money) + "  stores " + Stores(m.Stores) + "  ashore " + Stores(m.Shore) + "  fish " + m.Fish +
                             (m.Debts.Length > 0 ? "  debts " + string.Join(" ", m.Debts) : "");
                     break;
@@ -99,7 +99,7 @@ namespace FollowingSeasCoop.Runtime
                     value = m.Deleted ? "gone" : m.Data;
                     break;
                 case JournalLineMsg m:
-                    key = "journal";
+                    key = m.World ? "journal, world" : "journal";
                     value = m.Line;
                     break;
                 case FishRecordMsg m:

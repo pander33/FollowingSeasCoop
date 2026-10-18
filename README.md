@@ -121,7 +121,7 @@ ends for everybody.
   winches, doors, lanterns and ballast.
 - 🛢️ Barrels and sacks can be carried, put down and thrown by anyone.
 - 💰 One purse and one set of stores: money, provisions aboard and in the store ashore, debts, the
-  journal and contracts belong to the whole crew. A delivery by any player pays the common purse.
+  journal (contracts, notes read and places found) and contracts belong to the whole crew. A delivery by any player pays the common purse.
 - 🗺️ The chart: courses and markers drawn by anyone are on everybody's chart. A change made while
   your own chart is open shows the next time you open it.
 - 📦 Cargo: anyone can load, move, unload and deliver crates.

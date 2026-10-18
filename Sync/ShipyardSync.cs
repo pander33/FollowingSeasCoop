@@ -181,7 +181,8 @@ namespace FollowingSeasCoop.Sync
             if (h.Length != a.Length || b.Length != a.Length) return after;
             for (int i = 1; i < a.Length; i++)
             {
-                if (i <= PlanFlags) { if (a[i] != b[i]) h[i] = a[i]; continue; }
+                if (a[i] == b[i]) continue;
+                if (i <= PlanFlags) { h[i] = a[i]; continue; }
                 if (TryNumber(h[i], out float hv) && TryNumber(b[i], out float bv) && TryNumber(a[i], out float av))
                     h[i] = (hv + av - bv).ToString(CultureInfo.InvariantCulture);
                 else h[i] = a[i];

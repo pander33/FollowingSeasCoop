@@ -92,19 +92,22 @@ namespace FollowingSeasCoop.Net
         public string[] Debts = Array.Empty<string>();
         /// <summary>The guest's world was loaded again from the copy it joined with: it asks for everything anew.</summary>
         public bool Resync;
+        /// <summary>With <see cref="Resync"/>: how many journal lines of the contracts and of the world
+        /// the guest's world holds. The host's lists begin with the same lines, so it sends only the rest.</summary>
+        public int Logs, WorldLogs;
         /// <summary>Fish put into the fish hold (or sold out of it, negative).</summary>
         public int Fish;
 
         public void Serialize(NetDataWriter w)
         {
             w.Put(Seq); w.Put(Money); EconomyWire.Put(w, Stores); EconomyWire.Put(w, Shore);
-            EconomyWire.Put(w, Debts); w.Put(Resync); w.Put(Fish);
+            EconomyWire.Put(w, Debts); w.Put(Resync); w.Put(Logs); w.Put(WorldLogs); w.Put(Fish);
         }
 
         public void Deserialize(NetDataReader r)
         {
             Seq = r.GetUInt(); Money = r.GetFloat(); Stores = EconomyWire.GetStores(r); Shore = EconomyWire.GetStores(r);
-            Debts = EconomyWire.GetLines(r); Resync = r.GetBool(); Fish = r.GetInt();
+            Debts = EconomyWire.GetLines(r); Resync = r.GetBool(); Logs = r.GetInt(); WorldLogs = r.GetInt(); Fish = r.GetInt();
         }
     }
 
@@ -135,12 +138,19 @@ namespace FollowingSeasCoop.Net
         }
     }
 
-    /// <summary>A new line of the ship's journal, from the copy whose game wrote it.</summary>
+    /// <summary>
+    /// A new line of the journal, from the copy whose game wrote it: of the contracts
+    /// (<c>GameData.logs</c>) or, with <see cref="World"/>, of what was learned about the world
+    /// (<c>worldLogs</c>: notes read, places found). A receiver adds a line it does not have.
+    /// </summary>
     public sealed class JournalLineMsg : INetMessage
     {
+        /// <summary>A note's every page is in its line; at three UTF-8 bytes a character it still fits the wire's 16-bit length.</summary>
+        public const int MaxLine = 16000;
         public MsgType Type => MsgType.JournalLine;
+        public bool World;
         public string Line = "";
-        public void Serialize(NetDataWriter w) => w.Put(Line ?? "", EconomyWire.MaxText);
-        public void Deserialize(NetDataReader r) => Line = r.GetString(EconomyWire.MaxText);
+        public void Serialize(NetDataWriter w) { w.Put(World); w.Put(Line ?? "", MaxLine); }
+        public void Deserialize(NetDataReader r) { World = r.GetBool(); Line = r.GetString(MaxLine); }
     }
 }
