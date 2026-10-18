@@ -45,6 +45,7 @@ namespace FollowingSeasCoop.Sync
             // The left and the right middle finger's first bone: the line the hand points along.
             public Transform[] Fingers;
             public float LeftHold, RightHold;
+            public float LeftCurl, RightCurl;
             public Vector3 LeftAt, RightAt;
             public Vector3 LastWorld;
             public bool HasLastWorld;
@@ -61,6 +62,9 @@ namespace FollowingSeasCoop.Sync
             public double HandsX, HandsY, HandsZ;
             public Vector3 RightOffset, LeftOffset, RightControl, LeftControl;
             public readonly ToolVisuals Tools = new ToolVisuals();
+            public HandPose Hands;
+            public PalmGrip RightGrip, LeftGrip;
+            public Quaternion RightGripOffset, LeftGripOffset;
         }
 
         private readonly CoopNet _net;
@@ -174,6 +178,14 @@ namespace FollowingSeasCoop.Sync
                 state.HasHands = true;
                 state.RightX = r.x; state.RightY = r.y; state.RightZ = r.z;
                 state.LeftX = l.x; state.LeftY = l.y; state.LeftZ = l.z;
+                ControlPalms(player.heldObject.transform, orientation, right, left, out Quaternion rq, out Quaternion lq);
+                if (deck != null)
+                {
+                    rq = Quaternion.Inverse(deck.rotation) * rq;
+                    lq = Quaternion.Inverse(deck.rotation) * lq;
+                }
+                state.RightQx = rq.x; state.RightQy = rq.y; state.RightQz = rq.z; state.RightQw = rq.w;
+                state.LeftQx = lq.x; state.LeftQy = lq.y; state.LeftQz = lq.z; state.LeftQw = lq.w;
             }
 
             msg = state;
@@ -210,19 +222,30 @@ namespace FollowingSeasCoop.Sync
             if (collider == null) collider = held.GetComponentInChildren<Collider>();
             if (collider == null) return false;
 
-            Vector3 up = Vector3.up, side = orientation.right;
+            Transform ship = player.ship != null ? player.ship.transform : null;
+            Vector3 up = ship != null ? ship.up : Vector3.up, side = orientation.right;
             Vector3 chest = camera.transform.position - up * 0.35f;
             SteeringController steering = held.GetComponentInParent<SteeringController>();
             if (steering != null && steering.isWheelType)
             {
-                Bounds wheel = collider.bounds;
-                float size = Mathf.Max(wheel.size.x, Mathf.Max(wheel.size.y, wheel.size.z));
-                right = wheel.center + side * (size * WheelSide) + up * (size * WheelUp);
-                left = wheel.center - side * (size * WheelSide) + up * (size * WheelUp);
+                Bounds wheel = ControlBounds(collider);
+                Vector3 size = Vector3.Scale(wheel.size, collider.transform.lossyScale);
+                Vector3 normal = ThinAxis(collider.transform, size);
+                Vector3 wheelUp = Vector3.ProjectOnPlane(up, normal).normalized;
+                if (wheelUp.sqrMagnitude < 0.0001f)
+                    wheelUp = Vector3.ProjectOnPlane(Mathf.Abs(Vector3.Dot(collider.transform.up, normal)) < 0.9f
+                        ? collider.transform.up : collider.transform.right, normal).normalized;
+                Vector3 wheelSide = Vector3.Cross(wheelUp, normal).normalized;
+                if (Vector3.Dot(wheelSide, side) < 0f) wheelSide = -wheelSide;
+                float radius = Mathf.Max(Mathf.Abs(size.x), Mathf.Max(Mathf.Abs(size.y), Mathf.Abs(size.z))) * 0.5f;
+                Vector3 center = collider.transform.TransformPoint(wheel.center);
+                right = center + (wheelSide * WheelSide + wheelUp * WheelUp).normalized * radius;
+                left = center + (-wheelSide * WheelSide + wheelUp * WheelUp).normalized * radius;
                 return true;
             }
 
-            Vector3 grip = collider.ClosestPoint(chest);
+            Vector3 grip = collider is MeshCollider mesh && !mesh.convex
+                ? collider.bounds.ClosestPoint(chest) : collider.ClosestPoint(chest);
             // Not a box, sphere, capsule or convex mesh: the point comes back as it went in.
             if (grip == chest) grip = collider.bounds.ClosestPoint(chest);
             Vector3 along = side;
@@ -233,6 +256,11 @@ namespace FollowingSeasCoop.Sync
                 float longest = Mathf.Max(s.x, Mathf.Max(s.y, s.z));
                 float rest = s.x + s.y + s.z - longest - Mathf.Min(s.x, Mathf.Min(s.y, s.z));
                 if (longest > rest * 3f) along = axis;
+            }
+            else if (collider is CapsuleCollider capsule)
+            {
+                along = capsule.transform.TransformDirection(capsule.direction == 0 ? Vector3.right
+                    : capsule.direction == 1 ? Vector3.up : Vector3.forward);
             }
             else
             {
@@ -245,6 +273,100 @@ namespace FollowingSeasCoop.Sync
             right = grip + along * (HandSpread * 0.5f);
             left = grip - along * (HandSpread * 0.5f);
             return true;
+        }
+
+        private static Bounds ControlBounds(Collider collider)
+        {
+            Transform space = collider.transform;
+            Bounds local;
+            if (collider is BoxCollider box) local = new Bounds(box.center, box.size);
+            else if (collider is MeshCollider mesh && mesh.sharedMesh != null) local = mesh.sharedMesh.bounds;
+            else if (collider is SphereCollider sphere) local = new Bounds(sphere.center, Vector3.one * (sphere.radius * 2f));
+            else if (collider is CapsuleCollider capsule)
+            {
+                Vector3 size = Vector3.one * (capsule.radius * 2f);
+                size[capsule.direction] = capsule.height;
+                local = new Bounds(capsule.center, size);
+            }
+            else
+            {
+                Bounds world = collider.bounds;
+                local = new Bounds(space.InverseTransformPoint(world.center), Vector3.zero);
+                for (int x = -1; x <= 1; x += 2)
+                    for (int y = -1; y <= 1; y += 2)
+                        for (int z = -1; z <= 1; z += 2)
+                            local.Encapsulate(space.InverseTransformPoint(world.center +
+                                Vector3.Scale(world.extents, new Vector3(x, y, z))));
+            }
+            return local;
+        }
+
+        private static Vector3 ThinAxis(Transform space, Vector3 size) =>
+            Mathf.Abs(size.x) <= Mathf.Abs(size.y) && Mathf.Abs(size.x) <= Mathf.Abs(size.z)
+                ? space.right : Mathf.Abs(size.y) <= Mathf.Abs(size.z) ? space.up : space.forward;
+
+        private static void ControlPalms(Transform control, Transform body, Vector3 right, Vector3 left,
+            out Quaternion rightRotation, out Quaternion leftRotation)
+        {
+            Collider collider = control.GetComponent<Collider>();
+            if (collider == null) collider = control.GetComponentInChildren<Collider>();
+            Transform space = collider.transform;
+            Bounds local = ControlBounds(collider);
+            Vector3 along = (right - left).normalized;
+            SteeringController steering = control.GetComponentInParent<SteeringController>();
+            bool wheel = steering != null && steering.isWheelType;
+            Vector3 size = Vector3.Scale(local.size, space.lossyScale);
+            Vector3 thin = ThinAxis(space, size);
+            Quaternion Frame(Vector3 point, bool isRight)
+            {
+                Vector3 normal;
+                Vector3 axis = along;
+                if (wheel)
+                {
+                    Vector3 radial = Vector3.ProjectOnPlane(point - space.TransformPoint(local.center), thin).normalized;
+                    axis = Vector3.Cross(thin, radial).normalized;
+                    normal = thin;
+                    if (Vector3.Dot(normal, point - body.position) < 0f) normal = -normal;
+                }
+                else
+                {
+                    Vector3 outward;
+                    if (collider is SphereCollider sphere)
+                        outward = point - space.TransformPoint(sphere.center);
+                    else if (collider is CapsuleCollider capsule)
+                    {
+                        Vector3 center = space.TransformPoint(capsule.center);
+                        Vector3 capsuleAxis = space.TransformDirection(capsule.direction == 0 ? Vector3.right
+                            : capsule.direction == 1 ? Vector3.up : Vector3.forward);
+                        Vector3 scale = space.lossyScale;
+                        float axialScale = Mathf.Abs(scale[capsule.direction]);
+                        float radialScale = Mathf.Max(Mathf.Abs(scale[(capsule.direction + 1) % 3]),
+                            Mathf.Abs(scale[(capsule.direction + 2) % 3]));
+                        float half = Mathf.Max(0f, capsule.height * axialScale * 0.5f - capsule.radius * radialScale);
+                        Vector3 nearest = center + capsuleAxis * Mathf.Clamp(Vector3.Dot(point - center, capsuleAxis), -half, half);
+                        outward = point - nearest;
+                    }
+                    else
+                    {
+                        Vector3 p = space.InverseTransformPoint(point) - local.center;
+                        Vector3 e = local.extents;
+                        Vector3 relative = new Vector3(e.x > 0f ? p.x / e.x : 0f,
+                            e.y > 0f ? p.y / e.y : 0f, e.z > 0f ? p.z / e.z : 0f);
+                        outward = Mathf.Abs(relative.x) >= Mathf.Abs(relative.y) && Mathf.Abs(relative.x) >= Mathf.Abs(relative.z)
+                            ? space.right * Mathf.Sign(relative.x) : Mathf.Abs(relative.y) >= Mathf.Abs(relative.z)
+                                ? space.up * Mathf.Sign(relative.y) : space.forward * Mathf.Sign(relative.z);
+                    }
+                    normal = Vector3.ProjectOnPlane(-outward, along);
+                    if (normal.sqrMagnitude < 0.0001f) normal = Vector3.ProjectOnPlane(thin, along);
+                    if (normal.sqrMagnitude < 0.0001f) normal = Vector3.ProjectOnPlane(space.up, along);
+                    if (normal.sqrMagnitude < 0.0001f) normal = Vector3.ProjectOnPlane(space.right, along);
+                    normal.Normalize();
+                }
+                Vector3 fingers = Vector3.Cross(axis, normal).normalized * (isRight ? 1f : -1f);
+                return Quaternion.LookRotation(fingers, normal);
+            }
+            rightRotation = Frame(right, true);
+            leftRotation = Frame(left, false);
         }
 
         // -----------------------------------------------------------------
@@ -291,6 +413,8 @@ namespace FollowingSeasCoop.Sync
                 remote.HandsX = msg.X; remote.HandsY = msg.Y; remote.HandsZ = msg.Z;
                 remote.RightOffset = new Vector3(msg.RightX, msg.RightY, msg.RightZ);
                 remote.LeftOffset = new Vector3(msg.LeftX, msg.LeftY, msg.LeftZ);
+                remote.RightGripOffset = new Quaternion(msg.RightQx, msg.RightQy, msg.RightQz, msg.RightQw);
+                remote.LeftGripOffset = new Quaternion(msg.LeftQx, msg.LeftQy, msg.LeftQz, msg.LeftQw);
             }
             remote.Pose.InterpDelayMs = Plugin.InterpDelayMs.Value;
             remote.Pose.Push(msg.Tick, msg.X, msg.Y, msg.Z, msg.Yaw, msg.Pitch, msg.Vx, msg.Vy, msg.Vz);
@@ -344,6 +468,9 @@ namespace FollowingSeasCoop.Sync
                 remote.Tools.Apply(remote.Avatar, remote.Spine?[3], pitch, remote.Crouching, remote.Tool, remote.ToolUse, remote.ToolRaised);
                 if (remote.HasHands)
                 {
+                    Quaternion frameRotation = deck != null ? deck.rotation : Quaternion.identity;
+                    remote.RightGrip.Rotation = frameRotation * remote.RightGripOffset;
+                    remote.LeftGrip.Rotation = frameRotation * remote.LeftGripOffset;
                     // From the pose the hands came with, not the interpolated one: on the ship this is
                     // the hull-local point itself, where this copy's wheel or rope is too.
                     if (deck != null)
@@ -413,6 +540,7 @@ namespace FollowingSeasCoop.Sync
                         remote.Animator.GetBoneTransform(HumanBodyBones.LeftMiddleProximal),
                         remote.Animator.GetBoneTransform(HumanBodyBones.RightMiddleProximal),
                     };
+                    remote.Hands = new HandPose(remote.Animator);
                 }
             }
             Plugin.Log.LogInfo("[Players] Avatar created for " + _net.GetPlayerName(remote.NetId) + " (NetId " + remote.NetId + ")");
@@ -532,6 +660,7 @@ namespace FollowingSeasCoop.Sync
                 Transform body = remote.Avatar.transform;
                 bool right = false, left = false, tool = false;
                 Vector3 r = default, l = default;
+                PalmGrip rg = remote.RightGrip, lg = remote.LeftGrip;
                 // The climb moves the arms itself.
                 if ((remote.Flags & PlayerFlags.OnLadder) == 0)
                 {
@@ -542,20 +671,74 @@ namespace FollowingSeasCoop.Sync
                         r = box.center + body.right * half;
                         l = box.center - body.right * half;
                         right = left = true;
+                        rg = new PalmGrip(r - body.right * WristToGrip, body.up, -body.right, FingerGrip.Side);
+                        lg = new PalmGrip(l + body.right * WristToGrip, body.up, body.right, FingerGrip.Side);
                     }
                     else if (remote.HasHands)
                     {
                         r = Wrist(remote.RightControl, remote.Arms[3]);
                         l = Wrist(remote.LeftControl, remote.Arms[0]);
                         right = left = true;
+                        rg.Position = remote.RightControl;
+                        lg.Position = remote.LeftControl;
+                        rg.Fingers = lg.Fingers = FingerGrip.Cylinder;
                     }
                     else if (remote.Tools.Grips(out r, out l, out bool both))
                     {
                         right = tool = true; left = both;
+                        remote.Tools.PalmGrips(out rg, out PalmGrip toolLeft, out _);
+                        if (both) lg = toolLeft;
                     }
                 }
                 remote.RightHold = Mathf.MoveTowards(remote.RightHold, right ? 1f : 0f, dt * 5f);
                 remote.LeftHold = Mathf.MoveTowards(remote.LeftHold, left ? 1f : 0f, dt * 5f);
+                bool ladder = (remote.Flags & PlayerFlags.OnLadder) != 0;
+                if (remote.Hands != null && !ladder)
+                {
+                    if (right && remote.Hands.Available(true)) r = remote.Hands.Wrist(true, rg);
+                    else if (tool) r = Wrist(r, remote.Arms[3]);
+                    if (left && remote.Hands.Available(false)) l = remote.Hands.Wrist(false, lg);
+                    else if (tool) l = Wrist(l, remote.Arms[0]);
+                    if (tool && !remote.Tools.AtEye && right && remote.Hands.Available(true))
+                    {
+                        for (int pass = 0; pass < 4; pass++)
+                        {
+                            Vector3 shift = ReachCorrection(remote.Arms[3], remote.Arms[4], remote.Arms[5], r);
+                            if (left && remote.Hands.Available(false))
+                            {
+                                Vector3 leftShift = ReachCorrection(remote.Arms[0], remote.Arms[1], remote.Arms[2], l);
+                                if (leftShift.sqrMagnitude > shift.sqrMagnitude) shift = leftShift;
+                            }
+                            if (shift.sqrMagnitude < 0.000001f) break;
+                            remote.Tools.Shift(shift);
+                            rg.Position += shift; lg.Position += shift;
+                            r += shift; l += shift;
+                        }
+                        // Incompatible two-hand targets must not pull the primary hand off the tool.
+                        Vector3 remaining = ReachCorrection(remote.Arms[3], remote.Arms[4], remote.Arms[5], r);
+                        remote.Tools.Shift(remaining);
+                        rg.Position += remaining; lg.Position += remaining;
+                        r += remaining; l += remaining;
+                    }
+                    if (right) remote.RightAt = r;
+                    if (left) remote.LeftAt = l;
+                    Hold(remote.Arms[3], remote.Arms[4], remote.Arms[5], remote.Fingers[1], remote.RightAt, remote.RightHold, body, 1f);
+                    Hold(remote.Arms[0], remote.Arms[1], remote.Arms[2], remote.Fingers[0], remote.LeftAt, remote.LeftHold, body, -1f);
+                    remote.Hands.ApplyPalm(true, rg, remote.RightHold);
+                    remote.Hands.ApplyPalm(false, lg, remote.LeftHold);
+                    float rightContact = remote.Hands.Contact(true, rg);
+                    float leftContact = remote.Hands.Contact(false, lg);
+                    remote.RightCurl = Mathf.MoveTowards(remote.RightCurl, remote.RightHold * rightContact, dt * 5f);
+                    remote.LeftCurl = Mathf.MoveTowards(remote.LeftCurl, remote.LeftHold * leftContact, dt * 5f);
+                    remote.Hands.ApplyFingers(lg.Fingers, remote.LeftCurl, rg.Fingers, remote.RightCurl);
+                    remote.RightGrip = rg; remote.LeftGrip = lg;
+                    continue;
+                }
+                if (ladder)
+                {
+                    remote.RightCurl = remote.LeftCurl = 0f;
+                    continue;
+                }
                 if (right) remote.RightAt = tool ? Wrist(r, remote.Arms[3]) : r;
                 Hold(remote.Arms[3], remote.Arms[4], remote.Arms[5], remote.Fingers[1], remote.RightAt, remote.RightHold, body, 1f);
                 // The tool goes into the right hand where the arm could take it, then the left takes
@@ -570,6 +753,18 @@ namespace FollowingSeasCoop.Sync
                 if (left) remote.LeftAt = tool ? Wrist(l, remote.Arms[0]) : l;
                 Hold(remote.Arms[0], remote.Arms[1], remote.Arms[2], remote.Fingers[0], remote.LeftAt, remote.LeftHold, body, -1f);
             }
+        }
+
+        public void RestoreHandAnimation()
+        {
+            foreach (Remote remote in _remotes.Values) remote.Hands?.RestoreFingers();
+        }
+
+        private static Vector3 ReachCorrection(Transform shoulder, Transform elbow, Transform wrist, Vector3 target)
+        {
+            float reach = Vector3.Distance(shoulder.position, elbow.position) + Vector3.Distance(elbow.position, wrist.position);
+            Vector3 delta = target - shoulder.position;
+            return shoulder.position + Vector3.ClampMagnitude(delta, reach * 0.99f) - target;
         }
 
         // The wrist for a hand that closes on a point: the palm goes on past the wrist, along the arm.
@@ -591,6 +786,7 @@ namespace FollowingSeasCoop.Sync
         public void Remove(uint netId)
         {
             if (!_remotes.TryGetValue(netId, out Remote remote)) return;
+            remote.Hands?.Dispose();
             if (remote.Avatar != null) Object.Destroy(remote.Avatar);
             _remotes.Remove(netId);
         }
@@ -598,7 +794,10 @@ namespace FollowingSeasCoop.Sync
         public void Clear()
         {
             foreach (Remote remote in _remotes.Values)
+            {
+                remote.Hands?.Dispose();
                 if (remote.Avatar != null) Object.Destroy(remote.Avatar);
+            }
             _remotes.Clear();
             _hasLastFramePos = false;
         }

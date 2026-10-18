@@ -377,6 +377,8 @@ namespace FollowingSeasCoop.Net
         /// <summary>The hands are on a control (the wheel, a rope, a pump): where, from the feet, in the pose's frame.</summary>
         public bool HasHands;
         public float RightX, RightY, RightZ, LeftX, LeftY, LeftZ;
+        public float RightQx, RightQy, RightQz, RightQw = 1f;
+        public float LeftQx, LeftQy, LeftQz, LeftQw = 1f;
 
         public void Serialize(NetDataWriter w)
         {
@@ -393,6 +395,8 @@ namespace FollowingSeasCoop.Net
             if (!HasHands) return;
             w.Put(RightX); w.Put(RightY); w.Put(RightZ);
             w.Put(LeftX); w.Put(LeftY); w.Put(LeftZ);
+            w.Put(RightQx); w.Put(RightQy); w.Put(RightQz); w.Put(RightQw);
+            w.Put(LeftQx); w.Put(LeftQy); w.Put(LeftQz); w.Put(LeftQw);
         }
 
         public void Deserialize(NetDataReader r)
@@ -410,6 +414,8 @@ namespace FollowingSeasCoop.Net
             if (!HasHands) return;
             RightX = r.GetFloat(); RightY = r.GetFloat(); RightZ = r.GetFloat();
             LeftX = r.GetFloat(); LeftY = r.GetFloat(); LeftZ = r.GetFloat();
+            RightQx = r.GetFloat(); RightQy = r.GetFloat(); RightQz = r.GetFloat(); RightQw = r.GetFloat();
+            LeftQx = r.GetFloat(); LeftQy = r.GetFloat(); LeftQz = r.GetFloat(); LeftQw = r.GetFloat();
         }
     }
 

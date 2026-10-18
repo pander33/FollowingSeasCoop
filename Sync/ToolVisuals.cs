@@ -347,6 +347,44 @@ namespace FollowingSeasCoop.Sync
             return true;
         }
 
+        public bool PalmGrips(out PalmGrip right, out PalmGrip left, out bool both)
+        {
+            right = left = default;
+            if (!Grips(out Vector3 r, out Vector3 l, out both)) return false;
+            Vector3 forward = _frame * Vector3.forward;
+            Vector3 up = _frame * Vector3.up;
+            Vector3 side = _frame * Vector3.right;
+            if (_hold == Hold.Lantern)
+            {
+                right = new PalmGrip(r, forward, -up, FingerGrip.Handle);
+            }
+            else if (_tool.name.Contains("hammer"))
+            {
+                right = new PalmGrip(r, forward, -side, FingerGrip.Handle);
+            }
+            else if (_hold == Hold.Gun)
+            {
+                right = new PalmGrip(r, up, -side, FingerGrip.Trigger);
+                left = new PalmGrip(l, forward, up, FingerGrip.Support);
+            }
+            else if (_hold == Hold.Spyglass)
+            {
+                right = new PalmGrip(r, up, -side, FingerGrip.Cylinder);
+                left = new PalmGrip(l, up, side, FingerGrip.Cylinder);
+            }
+            else if (_hold == Hold.TwoHands || _hold == Hold.Quadrant)
+            {
+                right = new PalmGrip(r, up, -side, FingerGrip.Side);
+                left = new PalmGrip(l, up, side, FingerGrip.Side);
+            }
+            else
+            {
+                right = new PalmGrip(r, forward, up, FingerGrip.Handle);
+                left = new PalmGrip(l, forward, up, FingerGrip.Handle);
+            }
+            return true;
+        }
+
         // A real size, metres, for the longest side of each tool.
         private static float RealSize(Hold hold, string name)
         {

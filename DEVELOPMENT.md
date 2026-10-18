@@ -5,7 +5,7 @@ Technical details and the history of changes. What a player needs is in [`README
 - Game: Following Seas (Whipstaff Games, Steam app 2895440), Steam build 25792767,
   Unity 6000.3.20f1 on Mono; the game's assemblies target .NET Standard 2.1.
 - Mod: a BepInEx 5.4.23 plugin, `com.followingseas.coop`, version 0.1.0; released with wire protocol
-  12, current development tree uses protocol 20.
+  12, current development tree uses protocol 21.
 - Transport: LiteNetLib over UDP, port 7777 by default; the same datagrams can travel over Steam
   peer-to-peer (Facepunch.Steamworks) in place of an address.
 
@@ -64,6 +64,18 @@ that needs no game, `Tools/ProtocolSmoke`. The debugging tools — the trace, th
 copies' state, the Dev section, a script that starts a host and a guest side by side — are
 described in [`Tools/README.md`](Tools/README.md).
 
+### Hand-grip review fixes (2026-10-18)
+
+Hammer and lantern have dedicated closed Handle grips: the hammer palm faces sideways and
+the lantern palm faces down in the tool frame. Other one-hand tool grips are unchanged.
+Source review and Release build pass; these orientations still need an in-game visual check.
+
+Protocol 21 is unchanged. Finger restoration leaves newer animation untouched; finger closure
+has its own smoothed contact weight. Wheel targets and palm frames share the collider-local
+plane; spheres and capsules use radial normals. Non-eye tool correction ends with a primary-hand
+projection if two grips conflict. Release: 0 warnings / 0 errors; ProtocolSmoke: 228 checks passed.
+Visual validation on all six crew models and profiling of humanoid pose conversion remain open.
+
 ## Model
 
 Host-authoritative co-op. The host owns the world, the save and the ship's physics; guests are
@@ -110,7 +122,7 @@ so it lines up on every copy whatever that copy's origin is.
 | Controls | Wheel, reefs, rig ropes, winches, doors, lanterns, ballast, kedge anchor, mooring lines, pump — as state, not input. One hand at a time on what is held for a while. |
 | Things | Barrels and sacks: a registry keyed by scene path; one mover at a time sends poses, the others draw it from a buffer; stand-ins where a copy lacks the object. |
 | Tools in hand | Active inventory slot, raised pose, hammer blows and gunshots; a mesh copy without first-person scripts or arms, retaining lantern lights and flame, and gun sounds and particles. Quadrant and chronometer readings are reproduced locally. |
-| Hands on controls | IK targets calculated from the held control's collider and sent with the player pose; wheel-rim grips or generic grips along a handle or rope. No dedicated operating cycles or finger grips. |
+| Hands on controls | IK targets and palm rotations sent with the player pose, with procedural humanoid finger grips. No dedicated operating cycles. |
 | Household | Money, stores aboard and ashore, debts, the journal's contract and world pages (not its events): polled, sent as numbered differences (debts per creditor), the host's numbers win. A trade or transfer dialog applies what the player chose to the stores as they are when it is confirmed, not as they were when it opened. |
 | Chart | Courses and markers travel as the game's own lines, which went and which came; a closed chart rebuilds itself from them when it next opens. |
 | Contracts | Travel as the game's own save strings; the reward is counted on the delivering copy only. |
@@ -132,7 +144,7 @@ ship's Reset mode. Known and left alone: the gust phase steps on a guest when fr
 More detail: the game's item mechanics, as read from the decompile before the item stages were
 written, are in [`ITEMS_TECHNICAL.md`](ITEMS_TECHNICAL.md) (Russian).
 
-### Player animation status (development tree, protocol 20)
+### Player animation status (development tree, protocol 21)
 
 - Implemented: directional walking and running, procedural crouching and crouch-walking, ladder
   climbing, pitch shared between the chest, neck and head, and two-bone arm IK for carried things,
@@ -142,8 +154,16 @@ written, are in [`ITEMS_TECHNICAL.md`](ITEMS_TECHNICAL.md) (Russian).
 - Gun placement currently targets 0.30 m below the avatar's eye at idle and 0.14 m below when aiming.
   Grips are separated sideways, the left farther forward; both were then raised 0.04 m. These are
   placement targets before the arm-reach correction, not measured final world-space heights.
-- Missing: a swimming animation, avatar rowing/seated-at-oars animation, gun reloading, finger
-  wrapping, wheel regrips and dedicated winch, capstan, pump or rope operating cycles. Control IK
+- Palms and fingers: mirrored bone-based palm calibration and humanoid muscle profiles for handles,
+  cylinders, support, side grips and a separate trigger index finger. Protocol 21 transmits control
+  palm rotations. Finger conversion snapshots and restores the skeleton, applying only complete
+  finger chains. Missing bones/muscles are reported once per avatar. Previous finger changes are
+  restored from the unconditional update, independent of participation. Control palm frames use
+  collider faces and wheel-plane/rim tangents rather than object pivots. Unreachable non-eye tools
+  are moved towards the arms' reachable space; finger closure fades with palm/contact distance.
+  These grips still require visual acceptance on all crew models.
+- Missing: a swimming animation, avatar rowing/seated-at-oars animation, gun reloading,
+  wheel regrips and dedicated winch, capstan, pump or rope operating cycles. Control IK
   uses collider geometry, not authored grip points on each moving mechanism.
 - Cargo crates are placed through the cargo panel/grid, not carried as inventory things; a crate
   carrying animation is not an outstanding requirement of the current game interaction.
@@ -194,3 +214,4 @@ wire protocol did.
 | 2026-10-18 | 18 | A fish taken off a hook by two players at once goes to one of them; two players mending one leak at once both count; changes of a contract end the same on every copy. |
 | 2026-10-18 | 19 | Another player's body: walking and running in every direction, crouching, climbing a ladder, the head following the look; a tool or a carried thing in its hands. |
 | 2026-10-18 | 20 | Raised tool poses, quadrant and chronometer readings, remote gunshot sounds/particles/recoil, and transmitted hand targets for ship controls. Adjusted gun height and separated/raised its hand grips; final visual acceptance remains open. |
+| 2026-10-18 | 21 | Procedural palm orientation and finger grips for tools, carried things and controls; control snapshots include palm rotations. Visual acceptance remains open. |

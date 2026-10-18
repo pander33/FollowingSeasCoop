@@ -487,6 +487,7 @@ namespace FollowingSeasCoop.Runtime
         {
             try
             {
+                Players.RestoreHandAnimation();
                 TickMenuKey();
                 // Each guards itself: the menu must not take the network's frame with it.
                 CoopGameUI.TickInput(this);
