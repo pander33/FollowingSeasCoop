@@ -30,6 +30,7 @@ namespace FollowingSeasCoop.Sync
         private sealed class Remote
         {
             public uint NetId;
+            public PlayerAppearance Look;
             public readonly NetTransform Pose = new NetTransform();
             public byte Frame;
             public bool HasFrame;
@@ -79,6 +80,45 @@ namespace FollowingSeasCoop.Sync
         private float _lastCaptureAt;
 
         public int RemoteCount => _remotes.Count;
+
+        /// <summary>
+        /// A player who changed their look gets a new body. The pose buffer, the frame and what
+        /// the player holds stay with the player; the next placing builds the body anew.
+        /// </summary>
+        public void OnRosterChanged()
+        {
+            foreach (Remote remote in _remotes.Values)
+            {
+                // One who left goes with the next placing; it gets no body of the default look first.
+                if (remote.Avatar == null || !LookOf(remote.NetId, out PlayerAppearance look) || remote.Look.Same(look)) continue;
+                remote.Tools.Drop();
+                remote.Hands?.Dispose();
+                remote.Hands = null;
+                // Destroy waits for the end of the frame, and the new body is placed in this one.
+                remote.Avatar.SetActive(false);
+                Object.Destroy(remote.Avatar);
+                remote.Avatar = null;
+                remote.Animator = null;
+                remote.HasWalking = remote.HasVertical = remote.HasHorizontal = remote.HasStand = remote.HasLadder = remote.HasSpeed = false;
+                remote.Spine = remote.Legs = remote.Arms = remote.Fingers = null;
+                remote.LeftHold = remote.RightHold = remote.LeftCurl = remote.RightCurl = 0f;
+                Plugin.Log.LogInfo("[Players] " + _net.GetPlayerName(remote.NetId) + " changed their look");
+            }
+        }
+
+        // A look this copy does not know yet (a pose ahead of the roster) is the unchosen one; the
+        // roster that follows brings the right body.
+        private bool LookOf(uint netId, out PlayerAppearance look)
+        {
+            foreach (SessionMemberInfo member in _net.RosterSnapshot)
+                if (member.NetId == netId)
+                {
+                    look = AppearanceCatalog.ForPlayer(member.Appearance, netId);
+                    return true;
+                }
+            look = AppearanceCatalog.ForPlayer(new PlayerAppearance { Model = AppearanceCatalog.Unchosen }, netId);
+            return false;
+        }
 
         public PlayerSync(CoopNet net) { _net = net; }
 
@@ -492,7 +532,8 @@ namespace FollowingSeasCoop.Sync
 
         private void Spawn(Remote remote)
         {
-            remote.Avatar = AvatarFactory.Create(remote.NetId, _net.GetPlayerName(remote.NetId), out remote.Animator);
+            LookOf(remote.NetId, out remote.Look);
+            remote.Avatar = AvatarFactory.Create(remote.NetId, _net.GetPlayerName(remote.NetId), remote.Look, out remote.Animator);
             if (remote.Animator != null)
             {
                 foreach (AnimatorControllerParameter parameter in remote.Animator.parameters)

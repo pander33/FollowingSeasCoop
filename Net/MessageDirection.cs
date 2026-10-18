@@ -34,6 +34,7 @@ namespace FollowingSeasCoop.Net
                 case MsgType.ShipPlans:
                 case MsgType.ShipLaunch:
                 case MsgType.MapChange:
+                case MsgType.AppearanceUpdate:
                     return true;
                 default:
                     return false;

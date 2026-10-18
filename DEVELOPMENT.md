@@ -133,6 +133,7 @@ so it lines up on every copy whatever that copy's origin is.
 | Shipyard | The ship plans and what was paid or delivered for them are polled and sent line by line; the host adds a guest's change to its own figures. A payment counts from the purse as it is when it is made. A launch runs the game's own code on the launching copy; the others load the same ship scene and put the hull at the same point, a guest's launch through the host. |
 | Crew | A guest's orders are carried out by the host's crew; the looks and the roster are sent to guests. |
 | Player menu | A Co-op button and page made of copies of the game's own buttons; LAN list of hosted games. |
+| Appearance | Each player chooses a crew model, and for a model that shares its meshes with others, which of them each part takes its materials from; on the Character page of the Co-op window. Sent in the roster; a changed look rebuilds the avatar. |
 | Steam | A host is also reachable by its Steam id: Steam P2P datagrams tunnelled to LiteNetLib through loopback. Rich presence lists hosting friends in the join dialog and gives Steam's own Join Game and invites. Friends-only admission. |
 | Rescue | A drowned player is put back on deck before the game's death dialog. |
 | Other mods | `Runtime/ModChannel`: a line of text under a channel name, host to guests or guest to host; another mod reaches it by reflection (`Register`, `Send`, `Role`; `RegisterPeer` with the sender's NetId, `Members`, `SessionIdentity`; `CatchUnits`/`ReceiveCatchUnits`, a number a mod gives a trolled fish, carried with the hook's state). |
@@ -198,6 +199,7 @@ wire protocol did.
 | 2026-10-11 | 11 | The rowboat, crew orders and the crew's looks, the trolling reel, mooring line length. |
 | 2026-10-11 | 12 | The crew roster; the pumps the crew works. |
 | 2026-10-11 | 12 | `Dev/Window` keeps test copies windowed. |
+| 2026-10-18 | 22 | Each player's look: crew model and part materials, chosen on the Character page (development tree, after 0.1.0). |
 | 2026-10-11 | 12 | Dev buttons: a contract, a crate, weather, time, teleports, mending a leak. |
 | 2026-10-11 | 12 | Dev button *Make a thing*: a thing made while the game runs is shared. |
 | 2026-10-11 | 12 | Release 0.1.0 prepared: player's README, this file, the release script. |

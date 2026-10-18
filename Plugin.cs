@@ -17,6 +17,7 @@ namespace FollowingSeasCoop
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<string> PlayerName;
+        internal static ConfigEntry<string> PlayerAppearance;
         internal static ConfigEntry<int> Port;
         internal static ConfigEntry<string> JoinIp;
         internal static ConfigEntry<int> MaxClients;
@@ -45,6 +46,8 @@ namespace FollowingSeasCoop
 
             PlayerName = Config.Bind("Player", "Name", System.Environment.UserName ?? "Player",
                 "The name other players see in the session list.");
+            PlayerAppearance = Config.Bind("Player", "Appearance", "",
+                "How other players see you: chosen in the Co-op menu, under Character. Empty: a model by your place in the crew.");
             Port = Config.Bind("Network", "Port", 7777, "UDP port the host listens on and a client connects to.");
             JoinIp = Config.Bind("Network", "JoinIp", "127.0.0.1", "Host address used by Join.");
             MaxClients = Config.Bind("Network", "MaxClients", 3, "How many guests the host accepts.");

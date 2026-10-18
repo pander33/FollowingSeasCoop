@@ -34,6 +34,7 @@ namespace FollowingSeasCoop.Runtime
         internal CrewSync Crew { get; private set; }
         internal ShipyardSync Shipyard { get; private set; }
         internal ChartSync Chart { get; private set; }
+        internal AppearanceProfile Appearance { get; private set; }
 
         private Harmony _harmony;
         /// <summary>What the menu shows about the last thing that happened ("Connected", an error...).</summary>
@@ -57,6 +58,8 @@ namespace FollowingSeasCoop.Runtime
                 GameVersion = Application.version ?? "",
                 JoinBlocker = HostJoinBlocker,
             };
+            Appearance = new AppearanceProfile(Plugin.PlayerAppearance);
+            Net.PlayerAppearance = Appearance.Committed;
             World = new WorldTransfer(Net, message => Plugin.Log.LogInfo(message));
             Pause = new JoinPause();
             Players = new PlayerSync(Net);
@@ -81,6 +84,7 @@ namespace FollowingSeasCoop.Runtime
             Net.OnAccepted += ack => Notice = "Connected to " + ack.HostName + ", receiving the world";
             Net.OnLinkLost += ClientOnLinkLost;
             Net.OnGameMessage += OnGameMessage;
+            Net.OnRosterChanged += Players.OnRosterChanged;
             World.OnGuestAbort += reason => EndClientSession(reason);
             InitDev();
 

@@ -28,7 +28,7 @@ namespace FollowingSeasCoop.Runtime
     /// <see cref="TickPanel"/> is everything that is drawn. What is shown is worked out from the
     /// session's state every time, never remembered.
     /// </summary>
-    internal static class CoopGameUI
+    internal static partial class CoopGameUI
     {
         private enum Place { Closed, Title, World }
 
@@ -442,6 +442,7 @@ namespace FollowingSeasCoop.Runtime
             coop.SteamReady();
             _friendsAt = 0f;
             _place = place;
+            _characterOpen = false;
             _confirm = false;
             _note = "";
             _name.text = Plugin.PlayerName.Value;
@@ -460,6 +461,7 @@ namespace FollowingSeasCoop.Runtime
 
         private static void Close()
         {
+            _characterOpen = false;
             _place = Place.Closed;
             _confirm = false;
             _typing = false;
@@ -468,6 +470,7 @@ namespace FollowingSeasCoop.Runtime
 
         private static void DestroyPanel()
         {
+            _characterOpen = false;
             _place = Place.Closed;
             _typing = false;
             if (_canvas != null) UnityEngine.Object.Destroy(_canvas.gameObject);
@@ -601,6 +604,7 @@ namespace FollowingSeasCoop.Runtime
 
         private static void BackOrCancel()
         {
+            if (_characterOpen) { CloseCharacter(); return; }
             CoopBehaviour coop = CoopBehaviour.Instance;
             if (_place == Place.Title && coop.Net.IsClient)
             {
@@ -634,6 +638,13 @@ namespace FollowingSeasCoop.Runtime
             bool session = !title && !idle;
             bool hosting = session && net.IsHost;
             if (!session) _confirm = false;
+            if (linking) _characterOpen = false;
+            if (RefreshCharacter(coop, linking))
+            {
+                Arrange(title);
+                Navigate(title);
+                return;
+            }
             string blocker = !idle ? null : title ? coop.JoinBlocker() : coop.HostBlocker();
 
             _heading.text = title ? "Join a crew" : hosting ? "Hosting" : session ? "In a crew" : "Co-op";
@@ -845,10 +856,12 @@ namespace FollowingSeasCoop.Runtime
         // the game's buttons beside it stay in reach.
         private static void Navigate(bool title)
         {
-            var all = new List<Selectable> { _name, _host };
+            var all = new List<Selectable> { _name, _lookChange, _host };
             all.AddRange(_foundJoins);
             all.AddRange(_friendJoins);
-            all.AddRange(new Selectable[] { _port, _minus, _plus, _copy, _steamMode, _copyId, _hostButton, _join, _back, _rescue, _end, _yes, _no });
+            all.AddRange(new Selectable[] { _port, _minus, _plus, _copy, _steamMode, _copyId, _hostButton, _join, _back, _rescue, _end, _yes, _no, _modelPrev, _modelNext });
+            all.AddRange(_partButtons);
+            all.AddRange(new Selectable[] { _lookApply, _lookDefaults, _lookCancel });
             EventSystem events = EventSystem.current;
             GameObject selected = events != null ? events.currentSelectedGameObject : null;
             if (!title)
@@ -856,7 +869,7 @@ namespace FollowingSeasCoop.Runtime
                 foreach (Selectable one in all) one.navigation = Navigation.defaultNavigation;
                 // The selected button has just been replaced by another (Leave by Stay): go with it.
                 if (selected != null && !selected.activeInHierarchy && selected.transform.IsChildOf(_window))
-                    Select(_confirm ? _no : _hostButton.gameObject.activeSelf ? _hostButton : _rescue);
+                    Select(_characterOpen ? _lookApply : _confirm ? _no : _hostButton.gameObject.activeSelf ? _hostButton : _rescue);
                 return;
             }
             var open = new List<Selectable>();
@@ -878,7 +891,7 @@ namespace FollowingSeasCoop.Runtime
             }
             if (events == null || open.Count == 0) return;
             if (selected != null && selected.activeInHierarchy && selected.transform.IsChildOf(_window)) return;
-            events.SetSelectedGameObject((_join.gameObject.activeInHierarchy && _join.IsInteractable() ? _join : _back).gameObject);
+            events.SetSelectedGameObject((_characterOpen ? _lookApply : _join.gameObject.activeInHierarchy && _join.IsInteractable() ? _join : _back).gameObject);
         }
 
         // The address a guest on the same network types. A PC has many adapters, and a VPN tunnel
@@ -999,6 +1012,7 @@ namespace FollowingSeasCoop.Runtime
 
             _nameRow = Row(_window, "Your name");
             _name = Field(_nameRow.transform, Limits.Name, TMP_InputField.ContentType.Standard, -1f);
+            BuildLookRow();
             _hostRow = Row(_window, "Host address");
             _host = Field(_hostRow.transform, 128, TMP_InputField.ContentType.Standard, -1f);
             _host.onSubmit.AddListener(_ => Guarded(Join));
@@ -1073,6 +1087,7 @@ namespace FollowingSeasCoop.Runtime
             _message = Text(_window, "Message", _bodyFont, 15f, Warm);
 
             RectTransform buttons = Node(_window, "Buttons");
+            _buttonsRow = buttons.gameObject;
             var line = buttons.gameObject.AddComponent<HorizontalLayoutGroup>();
             line.spacing = 12f;
             line.childControlWidth = line.childControlHeight = true;
@@ -1087,6 +1102,7 @@ namespace FollowingSeasCoop.Runtime
             _back = MakeButton(buttons, "Back", BackOrCancel, -1f);
 
             _hint = Text(_window, "Hint", _bodyFont, 13f, Soft);
+            BuildCharacterPage();
             root.SetActive(false);
         }
 

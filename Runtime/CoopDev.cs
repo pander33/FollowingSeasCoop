@@ -229,6 +229,13 @@ namespace FollowingSeasCoop.Runtime
                 var d = new StateDump();
                 d.Info("Session", "who", who);
                 d.Info("Session", "protocol", Protocol.Version.ToString());
+                d.Info("Appearance", "profile", Plugin.PlayerAppearance.Value);
+                foreach (SessionMemberInfo member in Net.RosterSnapshot)
+                {
+                    PlayerAppearance look = AppearanceCatalog.Normalize(member.Appearance);
+                    d.Line("Appearance", member.NetId.ToString(),
+                           AppearanceCatalog.Id(look.Model) + " " + string.Join(",", look.Parts ?? new byte[0]));
+                }
                 d.Info("Session", "problems", CoopTrace.Problems + ", game exceptions " + CoopTrace.GameErrors);
                 d.Info("Session", "patches", PatchHealth.Details);
                 if (GameAccess.InWorld)

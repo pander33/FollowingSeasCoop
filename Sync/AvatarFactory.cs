@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using FollowingSeasCoop.Net;
 using FollowingSeasCoop.Runtime;
 using UnityEngine;
 
@@ -12,16 +14,11 @@ namespace FollowingSeasCoop.Sync
     /// </summary>
     internal static class AvatarFactory
     {
-        private static readonly string[] CrewIds =
-        {
-            "crew_male_01", "crew_female_01", "crew_male_02", "crew_female_02", "crew_male_03", "crew_female_03",
-        };
-
-        public static GameObject Create(uint netId, string label, out Animator animator)
+        public static GameObject Create(uint netId, string label, PlayerAppearance appearance, out Animator animator)
         {
             animator = null;
             GameObject avatar = null;
-            try { avatar = FromCrewPrefab(netId); }
+            try { avatar = FromCrewPrefab(appearance); }
             catch (Exception e) { Plugin.Log.LogWarning("[Avatar] Crew model unavailable, using a placeholder: " + e.Message); }
             if (avatar == null) avatar = Placeholder();
 
@@ -36,11 +33,11 @@ namespace FollowingSeasCoop.Sync
             return avatar;
         }
 
-        private static GameObject FromCrewPrefab(uint netId)
+        private static GameObject FromCrewPrefab(PlayerAppearance appearance)
         {
             DataPersistenceManager dp = GameAccess.Dp;
             if (dp == null) return null;
-            GameObject prefab = dp.InstantiateCrewByID(CrewIds[netId % (uint)CrewIds.Length]);
+            GameObject prefab = dp.InstantiateCrewByID(AppearanceCatalog.Id(appearance.Model));
             if (prefab == null) return null;
 
             // Instantiated under an inactive parent the copy never wakes: no Awake or Start of the
@@ -52,6 +49,8 @@ namespace FollowingSeasCoop.Sync
             {
                 copy = UnityEngine.Object.Instantiate(prefab, holder.transform);
                 RemoveSecondBody(copy);
+                try { AppearanceCatalog.Apply(copy, appearance); }
+                catch (Exception e) { Plugin.Log.LogWarning("[Avatar] Parts keep the model's own look: " + e.Message); }
                 // A component cannot be removed while another one requires it, so take several passes.
                 for (int pass = 0; pass < 4; pass++)
                 {
@@ -79,18 +78,25 @@ namespace FollowingSeasCoop.Sync
         // duplicate, so it goes, together with the navigation target marker.
         private static void RemoveSecondBody(GameObject copy)
         {
-            NewCrewController crew = copy.GetComponentInChildren<NewCrewController>(true);
-            if (crew == null) return;
+            foreach (GameObject part in SecondBody(copy)) UnityEngine.Object.DestroyImmediate(part);
+        }
+
+        /// <summary>The second body and the target marker inside a crew model, or its prefab.</summary>
+        internal static List<GameObject> SecondBody(GameObject root)
+        {
+            var parts = new List<GameObject>();
+            NewCrewController crew = root.GetComponentInChildren<NewCrewController>(true);
+            if (crew == null) return parts;
             foreach (string field in new[] { "crewClone", "targetClone" })
             {
                 try
                 {
                     var part = HarmonyLib.AccessTools.Field(typeof(NewCrewController), field)?.GetValue(crew) as GameObject;
-                    if (part != null && part != copy && part.transform.IsChildOf(copy.transform))
-                        UnityEngine.Object.DestroyImmediate(part);
+                    if (part != null && part != root && part.transform.IsChildOf(root.transform)) parts.Add(part);
                 }
-                catch (Exception e) { Plugin.Log.LogWarning("[Avatar] Could not remove '" + field + "': " + e.Message); }
+                catch (Exception e) { Plugin.Log.LogWarning("[Avatar] Could not read '" + field + "': " + e.Message); }
             }
+            return parts;
         }
 
         private static bool Keep(Component component)

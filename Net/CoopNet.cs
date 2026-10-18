@@ -18,6 +18,7 @@ namespace FollowingSeasCoop.Net
         public uint PlayerNetId;
         public string PlayerName = "";
         public MemberJoinState JoinState = MemberJoinState.Handshaking;
+        public PlayerAppearance Appearance;
         /// <summary>SteamID64 of a player who came over Steam; 0 for one who came by address.</summary>
         public ulong SteamId;
     }
@@ -29,6 +30,7 @@ namespace FollowingSeasCoop.Net
         public bool IsHost;
         public MemberJoinState State;
         public int PingMs = -1;
+        public PlayerAppearance Appearance;
     }
 
     /// <summary>
@@ -81,6 +83,8 @@ namespace FollowingSeasCoop.Net
         public string ModVersion = "0.0.0";
         public string GameVersion = "";
         public string PlayerName = "Player";
+        public PlayerAppearance PlayerAppearance;
+        private PlayerAppearance _helloAppearance;
 
         /// <summary>Host: null when a client may join now, otherwise the reason it may not.</summary>
         public Func<string> JoinBlocker = () => null;
@@ -235,6 +239,17 @@ namespace FollowingSeasCoop.Net
             if (session == null || session.JoinState == state) return;
             session.JoinState = state;
             BroadcastRoster();
+        }
+
+        /// <summary>
+        /// The local player's new look. A client still in the handshake sends it once accepted
+        /// (the host takes nothing before), unless its Hello already carried it.
+        /// </summary>
+        public void SetLocalAppearance(PlayerAppearance appearance)
+        {
+            PlayerAppearance = appearance;
+            if (Role == Role.Host) BroadcastRoster();
+            else if (Role == Role.Client) SendToHost(new AppearanceUpdateMsg { Appearance = appearance }, DeliveryMethod.ReliableOrdered);
         }
 
         // -----------------------------------------------------------------
@@ -587,12 +602,14 @@ namespace FollowingSeasCoop.Net
                 _hostPeer = peer;
                 State = LinkState.Handshaking;
                 _log("[CoopNet] Connected, sending Hello");
+                _helloAppearance = PlayerAppearance;
                 peer.Send(new HelloMsg
                 {
                     ProtocolVersion = Protocol.Version,
                     ModVersion = ModVersion,
                     GameVersion = GameVersion,
                     PlayerName = PlayerName,
+                    Appearance = PlayerAppearance,
                 }, DeliveryMethod.ReliableOrdered);
             }
             else
@@ -709,6 +726,13 @@ namespace FollowingSeasCoop.Net
                                   DeliveryMethod.Unreliable);
                     return;
                 }
+                if (type == MsgType.AppearanceUpdate)
+                {
+                    Tap?.Invoke(false, type, msg, session.PlayerNetId);
+                    session.Appearance = ((AppearanceUpdateMsg)msg).Appearance;
+                    BroadcastRoster();
+                    return;
+                }
                 Tap?.Invoke(false, type, msg, session.PlayerNetId);
                 OnGameMessage?.Invoke(type, msg, peer);
                 return;
@@ -729,6 +753,8 @@ namespace FollowingSeasCoop.Net
                          " (host mod " + ack.ModVersion + ", game " + ack.GameVersion + ")");
                     if (!string.IsNullOrEmpty(ack.GameVersion) && ack.GameVersion != GameVersion)
                         _log("[CoopNet] WARNING: the host runs game version " + ack.GameVersion + ", this copy is " + GameVersion);
+                    if (!PlayerAppearance.Same(_helloAppearance))
+                        SendToHost(new AppearanceUpdateMsg { Appearance = PlayerAppearance }, DeliveryMethod.ReliableOrdered);
                     OnAccepted?.Invoke(ack);
                     return;
                 }
@@ -770,6 +796,7 @@ namespace FollowingSeasCoop.Net
 
             session.PlayerNetId = Registry.AllocateId();
             session.PlayerName = string.IsNullOrEmpty(hello.PlayerName) ? "Player " + session.PlayerNetId : hello.PlayerName;
+            session.Appearance = hello.Appearance;
             session.HandshakeDone = true;
             session.JoinState = MemberJoinState.Loading;
             Registry.Register(session.PlayerNetId, NetObjKind.Player, session.PlayerNetId);
@@ -812,7 +839,7 @@ namespace FollowingSeasCoop.Net
             if (Role != Role.Host) return;
             var members = new List<SessionMemberInfo>
             {
-                new SessionMemberInfo { NetId = NetRegistry.HostPlayerNetId, Name = PlayerName, IsHost = true, State = MemberJoinState.Ready },
+                new SessionMemberInfo { NetId = NetRegistry.HostPlayerNetId, Name = PlayerName, IsHost = true, State = MemberJoinState.Ready, Appearance = PlayerAppearance },
             };
             foreach (var session in _sessions.Values)
             {
@@ -823,13 +850,14 @@ namespace FollowingSeasCoop.Net
                     Name = session.PlayerName,
                     State = session.JoinState,
                     PingMs = session.Peer != null ? session.Peer.Ping : -1,
+                    Appearance = session.Appearance,
                 });
             }
             _roster = members.ToArray();
 
             var msg = new RosterMsg { Revision = ++_rosterRevision, Entries = new RosterEntry[_roster.Length] };
             for (int i = 0; i < _roster.Length; i++)
-                msg.Entries[i] = new RosterEntry { NetId = _roster[i].NetId, Name = _roster[i].Name, State = _roster[i].State };
+                msg.Entries[i] = new RosterEntry { NetId = _roster[i].NetId, Name = _roster[i].Name, State = _roster[i].State, Appearance = _roster[i].Appearance };
             Broadcast(msg, DeliveryMethod.ReliableOrdered, readyOnly: false);
             OnRosterChanged?.Invoke();
         }
@@ -847,6 +875,7 @@ namespace FollowingSeasCoop.Net
                     Name = msg.Entries[i].Name,
                     State = msg.Entries[i].State,
                     IsHost = msg.Entries[i].NetId == NetRegistry.HostPlayerNetId,
+                    Appearance = msg.Entries[i].Appearance,
                 };
             }
             _roster = members;

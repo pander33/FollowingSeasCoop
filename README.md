@@ -134,6 +134,9 @@ ends for everybody.
 - ⚓ The shipyard: plans, payments and materials are shared, and a ship launched by anyone becomes
   everybody's ship. Whoever stood on the old deck is put aboard the new one.
 
+- 🧍 Your look: if you choose nothing, each player gets a different crew model. Choose a crew model on the Co-op page, under **Character**, and for most models
+  which model each part of the clothes takes its colours from. Everybody sees it, and it is kept
+  for your next games.
 **Not shared:** living animals (each player sees their own until one is shot), a fish in another
 player's hand, the view through another player's spyglass, and another player's rowing animation.
 The development build also reproduces gunshots and raised tool poses; visual and sound checks
@@ -162,6 +165,7 @@ the first start and can be edited in Notepad while the game is closed.
 | Setting | At first | What it does |
 |---|---|---|
 | `Player / Name` | your Windows user name | The name other players see. |
+| `Player / Appearance` | empty (Automatic) | Your look; set it on the Co-op page, under Character. |
 | `Network / Port` | 7777 | The UDP port the host listens on. |
 | `Network / MaxClients` | 3 | How many guests the host accepts, from 1 to 15. |
 | `Network / AnnounceOnLan` | true | The host appears in the Co-op list of players on the same network. |

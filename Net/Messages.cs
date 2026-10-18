@@ -45,6 +45,7 @@ namespace FollowingSeasCoop.Net
         ShipPlans = 35,
         ShipLaunch = 36,
         MapChange = 37,
+        AppearanceUpdate = 38,
     }
 
     public interface INetMessage
@@ -80,6 +81,7 @@ namespace FollowingSeasCoop.Net
         public const int ControlText = 400;
         public const int Version = 32;
         public const int RosterEntries = 16;
+        public const int AppearanceParts = 16;
         /// <summary>Payload bytes of one world chunk. Reliable channels fragment it over the MTU.</summary>
         public const int WorldChunk = 16000;
         /// <summary>Largest packed world a client accepts.</summary>
@@ -99,6 +101,7 @@ namespace FollowingSeasCoop.Net
         /// <summary>The game's own version string; logged, never compared.</summary>
         public string GameVersion = "";
         public string PlayerName = "";
+        public PlayerAppearance Appearance;
 
         public void Serialize(NetDataWriter w)
         {
@@ -106,6 +109,7 @@ namespace FollowingSeasCoop.Net
             w.Put(ModVersion ?? "", Limits.Version);
             w.Put(GameVersion ?? "", Limits.Version);
             w.Put(PlayerName ?? "", Limits.Name);
+            Appearance.Serialize(w);
         }
 
         public void Deserialize(NetDataReader r)
@@ -114,6 +118,7 @@ namespace FollowingSeasCoop.Net
             ModVersion = r.GetString(Limits.Version);
             GameVersion = r.GetString(Limits.Version);
             PlayerName = r.GetString(Limits.Name);
+            Appearance.Deserialize(r);
         }
     }
 
@@ -204,6 +209,7 @@ namespace FollowingSeasCoop.Net
         public uint NetId;
         public string Name;
         public MemberJoinState State;
+        public PlayerAppearance Appearance;
     }
 
     /// <summary>Host → clients: everyone in the session. A player missing from it has left.</summary>
@@ -223,6 +229,7 @@ namespace FollowingSeasCoop.Net
                 w.Put(Entries[i].NetId);
                 w.Put(Entries[i].Name ?? "", Limits.Name);
                 w.Put((byte)Entries[i].State);
+                Entries[i].Appearance.Serialize(w);
             }
         }
 
@@ -237,8 +244,18 @@ namespace FollowingSeasCoop.Net
                 Entries[i].NetId = r.GetUInt();
                 Entries[i].Name = r.GetString(Limits.Name);
                 Entries[i].State = (MemberJoinState)r.GetByte();
+                Entries[i].Appearance.Deserialize(r);
             }
         }
+    }
+
+    /// <summary>Client → host: the client's own new look. The host answers with a roster.</summary>
+    public sealed class AppearanceUpdateMsg : INetMessage
+    {
+        public MsgType Type => MsgType.AppearanceUpdate;
+        public PlayerAppearance Appearance;
+        public void Serialize(NetDataWriter w) => Appearance.Serialize(w);
+        public void Deserialize(NetDataReader r) => Appearance.Deserialize(r);
     }
 
     // -------------------------------------------------------------------------------------------
