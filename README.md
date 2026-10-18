@@ -135,7 +135,9 @@ ends for everybody.
   everybody's ship. Whoever stood on the old deck is put aboard the new one.
 
 **Not shared:** living animals (each player sees their own until one is shot), a fish in another
-player's hand, another player's gunshot, and the view through another player's spyglass.
+player's hand, the view through another player's spyglass, and another player's rowing animation.
+The development build also reproduces gunshots and raised tool poses; visual and sound checks
+are still in progress.
 
 ## 💡 Good to know
 

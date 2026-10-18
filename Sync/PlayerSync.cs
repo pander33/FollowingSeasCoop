@@ -53,7 +53,13 @@ namespace FollowingSeasCoop.Sync
             public PlayerFlags Flags;
             public bool Crouching;
             public byte Tool, ToolUse;
+            public bool ToolRaised;
             public long ToolTick;
+            // Hands on a control: from the feet of the pose they came with, in its frame; then in
+            // this copy's scene for this frame.
+            public bool HasHands;
+            public double HandsX, HandsY, HandsZ;
+            public Vector3 RightOffset, LeftOffset, RightControl, LeftControl;
             public readonly ToolVisuals Tools = new ToolVisuals();
         }
 
@@ -157,8 +163,18 @@ namespace FollowingSeasCoop.Sync
             if (player.onLadder) state.Flags |= PlayerFlags.OnLadder;
 
             state.Tool = ToolVisuals.LocalKind();
+            state.ToolRaised = ToolVisuals.LocalRaised(state.Tool);
             state.ToolUse = ToolVisuals.LocalUseCount;
             ToolVisuals.Measure(player, feet, deck != null ? deck.up : Vector3.up);
+
+            if (HandsOnControl(player, camera, orientation, out Vector3 right, out Vector3 left))
+            {
+                Vector3 r = deck != null ? deck.InverseTransformPoint(right) - framePos : right - feet;
+                Vector3 l = deck != null ? deck.InverseTransformPoint(left) - framePos : left - feet;
+                state.HasHands = true;
+                state.RightX = r.x; state.RightY = r.y; state.RightZ = r.z;
+                state.LeftX = l.x; state.LeftY = l.y; state.LeftZ = l.z;
+            }
 
             msg = state;
             return true;
@@ -171,6 +187,64 @@ namespace FollowingSeasCoop.Sync
             try { capsule = player.GetPlayerCollider(); } catch { }
             if (capsule == null) return player.transform.position;
             return capsule.transform.TransformPoint(capsule.center - Vector3.up * (capsule.height * 0.5f));
+        }
+
+        // How far apart the hands are on a bar or a rope, and a wheel's grips from its centre, as
+        // parts of its size: ten and two o'clock.
+        private const float HandSpread = 0.2f, WheelSide = 0.35f, WheelUp = 0.25f;
+
+        /// <summary>
+        /// Where the local player's hands are on the control it works: the game's held object while
+        /// it interacts — the wheel or whipstaff, a rope, a reef or winch handle, a pump, a capstan.
+        /// The hands close where its collider comes nearest the chest; on a long part (a bar, a rope)
+        /// one above the other along it, else side by side, and on a wheel at its rim.
+        /// A carried thing is the registry's, a ladder the climb's.
+        /// </summary>
+        private static bool HandsOnControl(PlayerHandler player, GameObject camera, Transform orientation, out Vector3 right, out Vector3 left)
+        {
+            right = left = default;
+            GameObject held = player.isInteracting ? player.heldObject : null;
+            if (held == null || camera == null || player.onLadder) return false;
+            if (held.GetComponent<ObjectInteractionHandler>() != null || held.GetComponent<LadderController>() != null) return false;
+            Collider collider = held.GetComponent<Collider>();
+            if (collider == null) collider = held.GetComponentInChildren<Collider>();
+            if (collider == null) return false;
+
+            Vector3 up = Vector3.up, side = orientation.right;
+            Vector3 chest = camera.transform.position - up * 0.35f;
+            SteeringController steering = held.GetComponentInParent<SteeringController>();
+            if (steering != null && steering.isWheelType)
+            {
+                Bounds wheel = collider.bounds;
+                float size = Mathf.Max(wheel.size.x, Mathf.Max(wheel.size.y, wheel.size.z));
+                right = wheel.center + side * (size * WheelSide) + up * (size * WheelUp);
+                left = wheel.center - side * (size * WheelSide) + up * (size * WheelUp);
+                return true;
+            }
+
+            Vector3 grip = collider.ClosestPoint(chest);
+            // Not a box, sphere, capsule or convex mesh: the point comes back as it went in.
+            if (grip == chest) grip = collider.bounds.ClosestPoint(chest);
+            Vector3 along = side;
+            if (collider is BoxCollider box)
+            {
+                Vector3 s = Vector3.Scale(box.size, box.transform.lossyScale);
+                Vector3 axis = s.x >= s.y && s.x >= s.z ? box.transform.right : s.y >= s.z ? box.transform.up : box.transform.forward;
+                float longest = Mathf.Max(s.x, Mathf.Max(s.y, s.z));
+                float rest = s.x + s.y + s.z - longest - Mathf.Min(s.x, Mathf.Min(s.y, s.z));
+                if (longest > rest * 3f) along = axis;
+            }
+            else
+            {
+                Vector3 s = collider.bounds.size;
+                float longest = Mathf.Max(s.x, Mathf.Max(s.y, s.z));
+                if (longest == s.y && s.y > 3f * Mathf.Max(s.x, s.z)) along = up;
+            }
+            // A bar upright: the right hand above. Lying: the right hand to the right.
+            if (Vector3.Dot(along, up + side) < 0f) along = -along;
+            right = grip + along * (HandSpread * 0.5f);
+            left = grip - along * (HandSpread * 0.5f);
+            return true;
         }
 
         // -----------------------------------------------------------------
@@ -212,6 +286,11 @@ namespace FollowingSeasCoop.Sync
                 remote.Crouching = (msg.Flags & PlayerFlags.Crouching) != 0;
                 remote.Tool = msg.Tool;
                 remote.ToolUse = msg.ToolUse;
+                remote.ToolRaised = msg.ToolRaised;
+                remote.HasHands = msg.HasHands;
+                remote.HandsX = msg.X; remote.HandsY = msg.Y; remote.HandsZ = msg.Z;
+                remote.RightOffset = new Vector3(msg.RightX, msg.RightY, msg.RightZ);
+                remote.LeftOffset = new Vector3(msg.LeftX, msg.LeftY, msg.LeftZ);
             }
             remote.Pose.InterpDelayMs = Plugin.InterpDelayMs.Value;
             remote.Pose.Push(msg.Tick, msg.X, msg.Y, msg.Z, msg.Yaw, msg.Pitch, msg.Vx, msg.Vy, msg.Vz);
@@ -262,7 +341,24 @@ namespace FollowingSeasCoop.Sync
                 Crouch(remote);
                 Look(remote, pitch);
                 // After the body: the tool hangs at its eye.
-                remote.Tools.Apply(remote.Avatar, remote.Spine?[3], pitch, remote.Crouching, remote.Tool, remote.ToolUse);
+                remote.Tools.Apply(remote.Avatar, remote.Spine?[3], pitch, remote.Crouching, remote.Tool, remote.ToolUse, remote.ToolRaised);
+                if (remote.HasHands)
+                {
+                    // From the pose the hands came with, not the interpolated one: on the ship this is
+                    // the hull-local point itself, where this copy's wheel or rope is too.
+                    if (deck != null)
+                    {
+                        var feet = new Vector3((float)remote.HandsX, (float)remote.HandsY, (float)remote.HandsZ);
+                        remote.RightControl = deck.TransformPoint(feet + remote.RightOffset);
+                        remote.LeftControl = deck.TransformPoint(feet + remote.LeftOffset);
+                    }
+                    else
+                    {
+                        Vector3 feet = CoordSpace.RealToLocal(remote.HandsX, remote.HandsY, remote.HandsZ);
+                        remote.RightControl = feet + remote.RightOffset;
+                        remote.LeftControl = feet + remote.LeftOffset;
+                    }
+                }
             }
             foreach (uint netId in _gone) Remove(netId);
         }
@@ -423,8 +519,8 @@ namespace FollowingSeasCoop.Sync
         private const float WristToGrip = 0.07f;
 
         /// <summary>
-        /// The hands of every avatar on what it holds: a carried thing in both, held at its sides, or
-        /// the tool it has out. After the things are drawn (<see cref="ItemRegistry.LateTick"/>): a
+        /// The hands of every avatar on what it holds: a carried thing in both, held at its sides, the
+        /// control it works, or the tool it has out. After the things are drawn (<see cref="ItemRegistry.LateTick"/>): a
         /// carried thing's pose of this frame is known only then.
         /// </summary>
         public void PoseHands(ItemRegistry items)
@@ -445,6 +541,12 @@ namespace FollowingSeasCoop.Sync
                         float half = AvatarIK.Reach(box, body.right) + WristToGrip;
                         r = box.center + body.right * half;
                         l = box.center - body.right * half;
+                        right = left = true;
+                    }
+                    else if (remote.HasHands)
+                    {
+                        r = Wrist(remote.RightControl, remote.Arms[3]);
+                        l = Wrist(remote.LeftControl, remote.Arms[0]);
                         right = left = true;
                     }
                     else if (remote.Tools.Grips(out r, out l, out bool both))

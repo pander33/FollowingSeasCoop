@@ -370,8 +370,13 @@ namespace FollowingSeasCoop.Net
         public float Vx, Vy, Vz;
         /// <summary>The tool in hand: its slot in the game's inventory plus one, 0 for none.</summary>
         public byte Tool;
-        /// <summary>Grows by one each time the tool is used (a blow of the caulking hammer).</summary>
+        /// <summary>Grows by one each time the tool is used (a blow of the caulking hammer, a shot).</summary>
         public byte ToolUse;
+        /// <summary>The tool is raised: the spyglass or the quadrant to the eye, the gun to the shoulder.</summary>
+        public bool ToolRaised;
+        /// <summary>The hands are on a control (the wheel, a rope, a pump): where, from the feet, in the pose's frame.</summary>
+        public bool HasHands;
+        public float RightX, RightY, RightZ, LeftX, LeftY, LeftZ;
 
         public void Serialize(NetDataWriter w)
         {
@@ -383,6 +388,11 @@ namespace FollowingSeasCoop.Net
             w.Put(Pitch);
             w.Put(Vx); w.Put(Vy); w.Put(Vz);
             w.Put(Tool); w.Put(ToolUse);
+            w.Put(ToolRaised);
+            w.Put(HasHands);
+            if (!HasHands) return;
+            w.Put(RightX); w.Put(RightY); w.Put(RightZ);
+            w.Put(LeftX); w.Put(LeftY); w.Put(LeftZ);
         }
 
         public void Deserialize(NetDataReader r)
@@ -395,6 +405,11 @@ namespace FollowingSeasCoop.Net
             Pitch = r.GetFloat();
             Vx = r.GetFloat(); Vy = r.GetFloat(); Vz = r.GetFloat();
             Tool = r.GetByte(); ToolUse = r.GetByte();
+            ToolRaised = r.GetBool();
+            HasHands = r.GetBool();
+            if (!HasHands) return;
+            RightX = r.GetFloat(); RightY = r.GetFloat(); RightZ = r.GetFloat();
+            LeftX = r.GetFloat(); LeftY = r.GetFloat(); LeftZ = r.GetFloat();
         }
     }
 

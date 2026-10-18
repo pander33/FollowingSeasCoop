@@ -4,7 +4,8 @@ Technical details and the history of changes. What a player needs is in [`README
 
 - Game: Following Seas (Whipstaff Games, Steam app 2895440), Steam build 25792767,
   Unity 6000.3.20f1 on Mono; the game's assemblies target .NET Standard 2.1.
-- Mod: a BepInEx 5.4.23 plugin, `com.followingseas.coop`, version 0.1.0, wire protocol 12.
+- Mod: a BepInEx 5.4.23 plugin, `com.followingseas.coop`, version 0.1.0; released with wire protocol
+  12, current development tree uses protocol 20.
 - Transport: LiteNetLib over UDP, port 7777 by default; the same datagrams can travel over Steam
   peer-to-peer (Facepunch.Steamworks) in place of an address.
 
@@ -108,7 +109,8 @@ so it lines up on every copy whatever that copy's origin is.
 | Sea and sky | Weather type, wind, wave spectrum, ocean clock, date and time, four times a second. |
 | Controls | Wheel, reefs, rig ropes, winches, doors, lanterns, ballast, kedge anchor, mooring lines, pump — as state, not input. One hand at a time on what is held for a while. |
 | Things | Barrels and sacks: a registry keyed by scene path; one mover at a time sends poses, the others draw it from a buffer; stand-ins where a copy lacks the object. |
-| Tools in hand | The active inventory slot and hammer blows; shown as a renderer-only copy of the local tool, the lantern with its light and flame. |
+| Tools in hand | Active inventory slot, raised pose, hammer blows and gunshots; a mesh copy without first-person scripts or arms, retaining lantern lights and flame, and gun sounds and particles. Quadrant and chronometer readings are reproduced locally. |
+| Hands on controls | IK targets calculated from the held control's collider and sent with the player pose; wheel-rim grips or generic grips along a handle or rope. No dedicated operating cycles or finger grips. |
 | Household | Money, stores aboard and ashore, debts, the journal's contract and world pages (not its events): polled, sent as numbered differences (debts per creditor), the host's numbers win. A trade or transfer dialog applies what the player chose to the stores as they are when it is confirmed, not as they were when it opened. |
 | Chart | Courses and markers travel as the game's own lines, which went and which came; a closed chart rebuilds itself from them when it next opens. |
 | Contracts | Travel as the game's own save strings; the reward is counted on the delivering copy only. |
@@ -123,12 +125,32 @@ so it lines up on every copy whatever that copy's origin is.
 | Rescue | A drowned player is put back on deck before the game's death dialog. |
 | Other mods | `Runtime/ModChannel`: a line of text under a channel name, host to guests or guest to host; another mod reaches it by reflection (`Register`, `Send`, `Role`; `RegisterPeer` with the sender's NetId, `Members`, `SessionIdentity`; `CatchUnits`/`ReceiveCatchUnits`, a number a mod gives a trolled fish, carried with the hook's state). |
 
-Not shared: living animals, a fish in another player's hand, another player's shot, the view
+Not shared: living animals, a fish in another player's hand, the view
 through another player's spyglass, another player's rowing animation. A guest cannot ask for the
 ship's Reset mode. Known and left alone: the gust phase steps on a guest when frame rates differ.
 
 More detail: the game's item mechanics, as read from the decompile before the item stages were
 written, are in [`ITEMS_TECHNICAL.md`](ITEMS_TECHNICAL.md) (Russian).
+
+### Player animation status (development tree, protocol 20)
+
+- Implemented: directional walking and running, procedural crouching and crouch-walking, ladder
+  climbing, pitch shared between the chest, neck and head, and two-bone arm IK for carried things,
+  tools and controls. A hammer blow is a tool swing, not a dedicated full-body action.
+- Tools: lowered/raised spyglass and quadrant, quadrant needle, chronometer hands, gun idle/aim
+  poses and timed shot sounds, particles and recoil. The spyglass is moved to the eye, not extended.
+- Gun placement currently targets 0.30 m below the avatar's eye at idle and 0.14 m below when aiming.
+  Grips are separated sideways, the left farther forward; both were then raised 0.04 m. These are
+  placement targets before the arm-reach correction, not measured final world-space heights.
+- Missing: a swimming animation, avatar rowing/seated-at-oars animation, gun reloading, finger
+  wrapping, wheel regrips and dedicated winch, capstan, pump or rope operating cycles. Control IK
+  uses collider geometry, not authored grip points on each moving mechanism.
+- Cargo crates are placed through the cargo panel/grid, not carried as inventory things; a crate
+  carrying animation is not an outstanding requirement of the current game interaction.
+- Verification: the maintainer checked directional walking/running, crouching and tool appearance.
+  The journal also records limited spyglass/quadrant and clock/shot-counter observations. Latest
+  gun-height and hand adjustments, ladder, look pitch, carried-item grips and control grips still
+  need visual acceptance; shot smoke and sound were not confirmed. Implementation is not acceptance.
 
 ## History of changes
 
@@ -171,3 +193,4 @@ wire protocol did.
 | 2026-10-18 | 17 | The fish sale dialog keeps fish another player put in or sold while it was open. |
 | 2026-10-18 | 18 | A fish taken off a hook by two players at once goes to one of them; two players mending one leak at once both count; changes of a contract end the same on every copy. |
 | 2026-10-18 | 19 | Another player's body: walking and running in every direction, crouching, climbing a ladder, the head following the look; a tool or a carried thing in its hands. |
+| 2026-10-18 | 20 | Raised tool poses, quadrant and chronometer readings, remote gunshot sounds/particles/recoil, and transmitted hand targets for ship controls. Adjusted gun height and separated/raised its hand grips; final visual acceptance remains open. |

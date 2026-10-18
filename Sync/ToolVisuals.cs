@@ -29,6 +29,15 @@ namespace FollowingSeasCoop.Sync
         private static readonly FieldInfo ButtonsField = AccessTools.Field(typeof(InventoryManager), "buttons");
         private static readonly FieldInfo ItemField = AccessTools.Field(typeof(InventoryButton), "item");
         private static readonly FieldInfo HammerReadyField = AccessTools.Field(typeof(CaulkHammerController), "animComplete");
+        private static readonly FieldInfo SpyglassAimedField = AccessTools.Field(typeof(SpyglassController), "aimed");
+        private static readonly FieldInfo QuadrantAnimatorField = AccessTools.Field(typeof(QuadrantController), "quadrantAnimations");
+        private static readonly FieldInfo NeedleField = AccessTools.Field(typeof(QuadrantController), "needleObject");
+        private static readonly FieldInfo GunAnimatorField = AccessTools.Field(typeof(GunEvents), "animator");
+        private static readonly FieldInfo GunSoundsField = AccessTools.Field(typeof(GunEvents), "fireSounds");
+        private static readonly FieldInfo StartEffectField = AccessTools.Field(typeof(GunEvents), "startEffect");
+        private static readonly FieldInfo FireEffectField = AccessTools.Field(typeof(GunEvents), "fireEffect");
+        private static readonly FieldInfo HourHandField = AccessTools.Field(typeof(ChronoController), "hourHand");
+        private static readonly FieldInfo MinuteHandField = AccessTools.Field(typeof(ChronoController), "minuteHand");
 
         // The local eye above the feet, as last seen standing and crouching. Every player has the
         // same body, so this copy's own numbers place the other players' tools.
@@ -70,8 +79,43 @@ namespace FollowingSeasCoop.Sync
             return 0;
         }
 
-        /// <summary>Grows by one with every blow of the local caulking hammer.</summary>
+        /// <summary>Grows by one with every blow of the local caulking hammer and every shot of the gun.</summary>
         public static byte LocalUseCount => s_useCount;
+
+        private static GameObject s_stateItem;
+        private static SpyglassController s_spyglass;
+        private static Animator s_quadrant, s_gun;
+        private static bool s_firing;
+
+        /// <summary>
+        /// Whether the local tool is raised — the spyglass or the quadrant to the eye, the gun to the
+        /// shoulder — and counts the gun's shots. The game's own flag of each tool; "fire" stays set
+        /// for the whole shot, so a look at every pose sent sees it.
+        /// </summary>
+        public static bool LocalRaised(byte kind)
+        {
+            List<InventoryButton> buttons = Buttons();
+            var item = kind != 0 && buttons != null && kind <= buttons.Count && buttons[kind - 1] != null
+                ? ItemField.GetValue(buttons[kind - 1]) as GameObject : null;
+            if (item != s_stateItem)
+            {
+                s_stateItem = item;
+                s_spyglass = item != null ? item.GetComponentInChildren<SpyglassController>(true) : null;
+                QuadrantController quadrant = item != null ? item.GetComponentInChildren<QuadrantController>(true) : null;
+                s_quadrant = quadrant != null ? QuadrantAnimatorField?.GetValue(quadrant) as Animator : null;
+                GunEvents gun = item != null ? item.GetComponentInChildren<GunEvents>(true) : null;
+                s_gun = gun != null ? GunAnimatorField?.GetValue(gun) as Animator : null;
+                s_firing = false;
+            }
+            if (item == null) return false;
+            if (s_spyglass != null) return SpyglassAimedField != null && (bool)SpyglassAimedField.GetValue(s_spyglass);
+            if (s_quadrant != null) return s_quadrant.isActiveAndEnabled && s_quadrant.GetInteger("zoomLevel") > 0;
+            if (s_gun == null || !s_gun.isActiveAndEnabled) return false;
+            bool firing = s_gun.GetBool("fire");
+            if (firing && !s_firing) s_useCount++;
+            s_firing = firing;
+            return s_gun.GetBool("ready");
+        }
 
         /// <summary>Called with every local pose: remembers how high the eye is above the feet.</summary>
         public static void Measure(PlayerHandler player, Vector3 feet, Vector3 up)
@@ -96,12 +140,20 @@ namespace FollowingSeasCoop.Sync
         // How a tool is held seen from outside. The first-person model is built for its owner's
         // camera: five times its size and off to the side, so the copy is brought to a real size
         // and put where hands hold it.
-        private enum Hold { Lantern, Spyglass, Gun, TwoHands, OneHand }
+        private enum Hold { Lantern, Spyglass, Quadrant, Gun, TwoHands, OneHand }
 
         private GameObject _tool;
         private byte _kind, _use;
-        private bool _hasUse;
-        private float _swingAt = -10f, _retryAt;
+        private bool _hasUse, _raised;
+        private float _swingAt = -10f, _fireAt = -10f, _retryAt;
+        // What the tool shows, on the copy: the quadrant's plumb needle, the chronometer's hands.
+        private Transform _needle, _hourHand, _minuteHand;
+        // The gun's shot: its sounds and its two effects in the game's order, and the events of its
+        // firing clip, played on the copy as the clip plays them.
+        private AudioSource[] _sounds = new AudioSource[0];
+        private readonly ParticleSystem[] _effects = new ParticleSystem[2];
+        private readonly List<AnimationEvent> _shot = new List<AnimationEvent>();
+        private float _bangAt = 0.8f;
         private byte _warnedKind;
         private Hold _hold;
         private bool _measured;
@@ -114,7 +166,7 @@ namespace FollowingSeasCoop.Sync
         private readonly List<Renderer> _body = new List<Renderer>();
 
         /// <summary>The tool is held to the eye: it stays there whatever the hands do.</summary>
-        public bool AtEye => _tool != null && _hold == Hold.Spyglass;
+        public bool AtEye => _tool != null && _raised && (_hold == Hold.Spyglass || _hold == Hold.Quadrant);
 
         /// <summary>Moves the tool for this frame, into a hand that could not quite reach it.</summary>
         public void Shift(Vector3 by)
@@ -123,7 +175,7 @@ namespace FollowingSeasCoop.Sync
         }
 
         /// <summary>Every frame after the avatar is placed.</summary>
-        public void Apply(GameObject avatar, Transform head, float pitch, bool crouching, byte kind, byte use)
+        public void Apply(GameObject avatar, Transform head, float pitch, bool crouching, byte kind, byte use, bool raised)
         {
             float now = Time.unscaledTime;
             if (kind != _kind || (kind != 0 && _tool == null && now >= _retryAt))
@@ -132,7 +184,7 @@ namespace FollowingSeasCoop.Sync
                 _kind = kind;
                 if (kind != 0)
                 {
-                    try { _tool = Build(kind, avatar, _body); }
+                    try { _tool = Build(kind, avatar); }
                     catch (Exception e)
                     {
                         // Tried again every two seconds: said once per tool.
@@ -155,13 +207,23 @@ namespace FollowingSeasCoop.Sync
                 return;
             }
 
-            if (_hasUse && use != _use) _swingAt = now;
+            float firing = now - _fireAt;
+            if (_hasUse && use != _use)
+            {
+                if (_hold != Hold.Gun) _swingAt = now;
+                // A shot already playing is not cut short by the next.
+                else if (firing > ShotLength()) { _fireAt = now; firing = 0f; }
+            }
             _use = use; _hasUse = true;
+            _raised = raised;
+            if (_hold == Hold.Gun) PlayShot(firing, firing - Time.unscaledDeltaTime);
 
             Transform body = avatar.transform;
             Vector3 up = body.up, right = body.right;
-            Quaternion look = body.rotation * Quaternion.Euler(Mathf.Clamp(pitch, -70f, 70f), 0f, 0f);
+            pitch = Mathf.Clamp(pitch, -70f, 70f);
+            Quaternion look = body.rotation * Quaternion.Euler(pitch, 0f, 0f);
             Vector3 ahead = look * Vector3.forward;
+            ShowReadings(pitch);
             // The avatar's own head where it has one: its crouch is not the camera's.
             Vector3 eye = head != null ? head.position + up * HeadToEye
                 : body.position + up * (crouching ? s_eyeCrouching : s_eyeStanding);
@@ -177,14 +239,24 @@ namespace FollowingSeasCoop.Sync
                     point = _center + Vector3.up * _extents.y;
                     at = eye - up * 0.25f + right * 0.2f + body.forward * 0.38f;
                     break;
-                case Hold.Spyglass:
+                case Hold.Spyglass when _raised:
+                case Hold.Quadrant when _raised:
                     point = _center - Vector3.forward * _extents.z;
-                    at = eye + ahead * 0.04f;
+                    at = eye + ahead * (_hold == Hold.Spyglass ? 0.04f : 0.06f);
+                    break;
+                case Hold.Spyglass:
+                    // Down in the right hand, pointing ahead and down.
+                    rotation = body.rotation * Quaternion.Euler(35f, 0f, 0f);
+                    at = eye - up * 0.5f + right * 0.2f + body.forward * 0.25f;
                     break;
                 case Hold.Gun:
-                    // The butt against the right shoulder, the barrel along the look.
+                    // The barrel along the look, held at the chest; aiming raises it to the neck.
                     point = _center - Vector3.forward * _extents.z;
-                    at = eye - up * 0.3f + right * 0.16f + ahead * 0.05f;
+                    at = _raised
+                        ? eye - up * 0.14f + right * 0.1f + ahead * 0.05f
+                        : eye - up * 0.3f + right * 0.1f + ahead * 0.05f;
+                    float kick = firing - _bangAt;
+                    if (kick >= 0f && kick < 0.25f) rotation *= Quaternion.Euler(-8f * Mathf.Sin(Mathf.PI * kick / 0.25f), 0f, 0f);
                     break;
                 case Hold.OneHand:
                     at = eye - up * 0.35f + right * 0.15f + ahead * 0.35f;
@@ -197,6 +269,35 @@ namespace FollowingSeasCoop.Sync
             if (swing < SwingSeconds) rotation *= Quaternion.Euler(-SwingDegrees * Mathf.Sin(Mathf.PI * swing / SwingSeconds), 0f, 0f);
             _frame = rotation;
             _tool.transform.SetPositionAndRotation(at - rotation * point, rotation * _align);
+        }
+
+        // The needle hangs plumb whatever the look (the game turns it by the camera's pitch, in the
+        // same frame as the copy's); the chronometer's hands go by this copy's time of day, which
+        // is the host's.
+        private void ShowReadings(float pitch)
+        {
+            if (_needle != null) _needle.localRotation = Quaternion.Euler(-90f, pitch + (pitch > 0f ? 0.8f : -0.8f), 0f);
+            if (_hourHand == null && _minuteHand == null) return;
+            Enviro.EnviroManager enviro = DataPersistenceManager.dpInstance != null ? DataPersistenceManager.dpInstance.enviro : null;
+            if (enviro == null || enviro.Time == null) return;
+            float minutes = enviro.Time.minutes;
+            if (_minuteHand != null) _minuteHand.localRotation = Quaternion.Euler(0f, minutes * 6f, 0f);
+            if (_hourHand != null) _hourHand.localRotation = Quaternion.Euler(0f, (enviro.Time.hours % 12 + minutes / 60f) * 30f, 0f);
+        }
+
+        private float ShotLength() => _shot.Count > 0 ? _shot[_shot.Count - 1].time : 0f;
+
+        // The events of the clip that fall between the last frame and this one.
+        private void PlayShot(float now, float before)
+        {
+            if (now < 0f || before > ShotLength()) return;
+            foreach (AnimationEvent e in _shot)
+            {
+                if (e.time > now || e.time <= before) continue;
+                int i = e.intParameter;
+                if (e.functionName == "PlayFireSound" && i >= 0 && i < _sounds.Length && _sounds[i] != null) _sounds[i].Play();
+                else if (e.functionName == "PlayEffectEvent" && i >= 0 && i < _effects.Length && _effects[i] != null) _effects[i].Play(true);
+            }
         }
 
         /// <summary>
@@ -215,6 +316,9 @@ namespace FollowingSeasCoop.Sync
                 case Hold.Lantern:
                     r = c + Vector3.up * e.y;
                     break;
+                case Hold.Spyglass when !_raised:
+                    r = c;
+                    break;
                 case Hold.Spyglass:
                     // Each hand from its own side of the tube, so the arms do not cross.
                     r = c - Vector3.forward * (e.z * 0.45f) - Vector3.up * e.y + Vector3.right * (e.x + 0.02f);
@@ -223,11 +327,12 @@ namespace FollowingSeasCoop.Sync
                     break;
                 case Hold.Gun:
                     // The right hand at the grip behind the trigger, the left under the fore-end.
-                    r = c - Vector3.forward * (e.z * 0.6f) - Vector3.up * (e.y * 0.2f);
-                    l = c - Vector3.forward * (e.z * 0.15f) - Vector3.up * (e.y * 0.2f);
+                    r = c - Vector3.forward * (e.z * 0.6f) - Vector3.up * (e.y - 0.02f) + Vector3.right * (e.x + 0.03f);
+                    l = c + Vector3.forward * (e.z * 0.15f) - Vector3.up * (e.y - 0.02f) - Vector3.right * (e.x + 0.03f);
                     both = true;
                     break;
                 case Hold.TwoHands:
+                case Hold.Quadrant:
                     r = c + Vector3.right * (e.x + 0.03f);
                     l = c - Vector3.right * (e.x + 0.03f);
                     both = true;
@@ -250,7 +355,8 @@ namespace FollowingSeasCoop.Sync
                 case Hold.Lantern: return 0.35f;
                 case Hold.Spyglass: return 0.45f;
                 case Hold.Gun: return 1.1f;
-                case Hold.TwoHands: return 0.3f;
+                case Hold.TwoHands:
+                case Hold.Quadrant: return 0.3f;
             }
             return name.Contains("chronometer") ? 0.12f : name.Contains("hammer") ? 0.35f : 0.25f;
         }
@@ -260,7 +366,8 @@ namespace FollowingSeasCoop.Sync
             if (name.Contains("lantern")) return Hold.Lantern;
             if (name.Contains("spyglass")) return Hold.Spyglass;
             if (name.Contains("FPSController")) return Hold.Gun;
-            if (name.Contains("quadrant") || name.Contains("compass")) return Hold.TwoHands;
+            if (name.Contains("quadrant")) return Hold.Quadrant;
+            if (name.Contains("compass")) return Hold.TwoHands;
             return Hold.OneHand;
         }
 
@@ -342,12 +449,77 @@ namespace FollowingSeasCoop.Sync
         public void Drop()
         {
             if (_tool != null) UnityEngine.Object.Destroy(_tool);
-            _tool = null; _kind = 0; _hasUse = false; _swingAt = -10f; _measured = false;
+            _tool = null; _kind = 0; _hasUse = false; _swingAt = -10f; _fireAt = -10f; _measured = false;
             _body.Clear();
+            _needle = _hourHand = _minuteHand = null;
+            _sounds = new AudioSource[0];
+            _effects[0] = _effects[1] = null;
+            _shot.Clear();
         }
 
-        private static GameObject Build(byte kind, GameObject avatar, List<Renderer> body)
+        // The way from a tool down to one of its parts, by child index: the copy has the same tree.
+        private static int[] PathOf(Transform root, Transform part)
         {
+            var path = new List<int>();
+            for (; part != null && part != root; part = part.parent) path.Insert(0, part.GetSiblingIndex());
+            return part == root ? path.ToArray() : null;
+        }
+
+        private static Transform Follow(Transform root, int[] path)
+        {
+            if (path == null) return null;
+            foreach (int i in path)
+            {
+                if (i >= root.childCount) return null;
+                root = root.GetChild(i);
+            }
+            return root;
+        }
+
+        private static Transform PartOf(GameObject item, object part, GameObject copy)
+        {
+            Transform t = part is GameObject go && go != null ? go.transform : part is Component c && c != null ? c.transform : null;
+            return t != null ? Follow(copy.transform, PathOf(item.transform, t)) : null;
+        }
+
+        // The parts of the copy that show what the tool reads, and the gun's shot.
+        private void FindParts(GameObject item, GameObject copy)
+        {
+            QuadrantController quadrant = item.GetComponentInChildren<QuadrantController>(true);
+            if (quadrant != null) _needle = PartOf(item, NeedleField?.GetValue(quadrant), copy);
+            ChronoController chrono = item.GetComponentInChildren<ChronoController>(true);
+            if (chrono != null)
+            {
+                _hourHand = PartOf(item, HourHandField?.GetValue(chrono), copy);
+                _minuteHand = PartOf(item, MinuteHandField?.GetValue(chrono), copy);
+            }
+            GunEvents gun = item.GetComponentInChildren<GunEvents>(true);
+            if (gun == null) return;
+            if (GunSoundsField?.GetValue(gun) is List<AudioSource> sounds)
+            {
+                _sounds = new AudioSource[sounds.Count];
+                for (int i = 0; i < sounds.Count; i++)
+                    _sounds[i] = PartOf(item, sounds[i], copy)?.GetComponent<AudioSource>();
+            }
+            _effects[0] = PartOf(item, StartEffectField?.GetValue(gun), copy)?.GetComponent<ParticleSystem>();
+            _effects[1] = PartOf(item, FireEffectField?.GetValue(gun), copy)?.GetComponent<ParticleSystem>();
+            Animator animator = GunAnimatorField?.GetValue(gun) as Animator;
+            RuntimeAnimatorController controller = animator != null ? animator.runtimeAnimatorController : null;
+            if (controller == null) return;
+            foreach (AnimationClip clip in controller.animationClips)
+            {
+                if (clip == null || !clip.name.Contains("fire")) continue;
+                _shot.AddRange(clip.events);
+                break;
+            }
+            _shot.Sort((a, b) => a.time.CompareTo(b.time));
+            foreach (AnimationEvent e in _shot)
+                if (e.functionName == "PlayFireSound" && e.intParameter == 0) _bangAt = e.time;
+        }
+
+        private GameObject Build(byte kind, GameObject avatar)
+        {
+            List<Renderer> body = _body;
             List<InventoryButton> buttons = Buttons();
             if (buttons == null || kind > buttons.Count || buttons[kind - 1] == null) return null;
             var item = ItemField.GetValue(buttons[kind - 1]) as GameObject;
@@ -368,6 +540,8 @@ namespace FollowingSeasCoop.Sync
             bool lit = false;
             foreach (Light light in item.GetComponentsInChildren<Light>(true))
                 if (light.gameObject.layer != toolLayer) lit = true;
+            // The gun keeps its sounds and its fire and smoke, for the shot; and its match burns.
+            bool gun = item.GetComponentInChildren<GunEvents>(true) != null;
             try
             {
                 copy = UnityEngine.Object.Instantiate(item, holder.transform);
@@ -390,7 +564,8 @@ namespace FollowingSeasCoop.Sync
                     bool removed = false;
                     foreach (Component component in copy.GetComponentsInChildren<Component>(true))
                     {
-                        if (component == null || Keep(component) || (lit && KeepLit(component)) || (pass == 0 && Required(component))) continue;
+                        if (component == null || Keep(component) || (lit && KeepLit(component)) || (gun && KeepShot(component)) ||
+                            (pass == 0 && Required(component))) continue;
                         // Goes with its particle system.
                         if (component.GetType().Name == "ParticleSystemRenderer" && component.GetComponent("ParticleSystem") != null) continue;
                         UnityEngine.Object.DestroyImmediate(component);
@@ -404,11 +579,14 @@ namespace FollowingSeasCoop.Sync
                     light.shadows = LightShadows.None;
                     light.cullingMask = ~0;
                 }
+                foreach (AudioSource source in copy.GetComponentsInChildren<AudioSource>(true))
+                    source.playOnAwake = false;
                 foreach (Transform t in copy.GetComponentsInChildren<Transform>(true))
                 {
                     t.gameObject.tag = "Untagged";
                     t.gameObject.layer = layer;
                 }
+                FindParts(item, copy);
                 copy.name = "CoopTool " + item.name;
                 copy.transform.SetParent(null, false);
                 // The size it has in front of its owner's eye, whatever the avatar's own scale is.
@@ -420,7 +598,6 @@ namespace FollowingSeasCoop.Sync
             return copy;
         }
 
-        // Named, not typed: the project does not reference the engine's UI, audio and particle modules.
         private static readonly HashSet<string> RequiredNames = new HashSet<string>
         {
             "Canvas", "CanvasRenderer", "AudioSource", "ParticleSystem", "ParticleSystemRenderer",
@@ -437,6 +614,9 @@ namespace FollowingSeasCoop.Sync
         {
             return component is Transform || component is MeshRenderer || component is MeshFilter || component is LODGroup;
         }
+
+        private static bool KeepShot(Component component) =>
+            component is AudioSource || component is ParticleSystem || component is ParticleSystemRenderer;
 
         private static bool KeepLit(Component component)
         {
