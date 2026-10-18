@@ -111,6 +111,8 @@ namespace FollowingSeasCoop.Sync
         private readonly HashSet<ObjectInteractionHandler> _driven = new HashSet<ObjectInteractionHandler>();
         // Made by the mod for a record whose object this copy does not have.
         private readonly HashSet<ObjectInteractionHandler> _standIns = new HashSet<ObjectInteractionHandler>();
+        // Records nothing here can stand in for yet, by key: when to look again.
+        private readonly Dictionary<string, float> _noModel = new Dictionary<string, float>(StringComparer.Ordinal);
         private readonly List<ObjectInteractionHandler> _hands = new List<ObjectInteractionHandler>();
         private readonly List<ItemMotionEntry> _motion = new List<ItemMotionEntry>();
         private readonly List<Entry> _resting = new List<Entry>();
@@ -138,7 +140,7 @@ namespace FollowingSeasCoop.Sync
 
         private void ClearCarry()
         {
-            _inHand.Clear(); _driven.Clear(); _standIns.Clear(); _ledHere.Clear();
+            _inHand.Clear(); _driven.Clear(); _standIns.Clear(); _ledHere.Clear(); _noModel.Clear();
             _notice = null; Refused = 0;
         }
 
@@ -756,6 +758,7 @@ namespace FollowingSeasCoop.Sync
                 }
                 // The yield of a hunt has no like thing lying about: it is made from what the animal leaves.
                 GameObject source = models.TryGetValue(r.Prefab, out ObjectInteractionHandler like) ? like.gameObject : HuntSync.YieldPrefab(r.Prefab);
+                if (source == null) source = Unseen(r, models);
                 if (source == null) continue;
                 if (!Enum.TryParse(r.ItemType, out ProvisionsController.ProvisionType type)) continue;
 
@@ -766,6 +769,27 @@ namespace FollowingSeasCoop.Sync
                 entry.Object = item;
                 Plugin.Log.LogInfo("[Items] Stand-in made for '" + r.Name + "' (" + r.Prefab + ", NetId " + r.NetId + ")");
             }
+        }
+
+        // A kind of thing this copy has not loaded, such as the yield of an animal of an island far
+        // away: the game's own asset when it is in memory, else any thing of the same type, so that
+        // the thing can at least be seen and taken.
+        private GameObject Unseen(ItemRecord r, Dictionary<string, ObjectInteractionHandler> models)
+        {
+            if (_noModel.TryGetValue(r.Key, out float retryAt) && Time.unscaledTime < retryAt) return null;
+            foreach (ObjectInteractionHandler asset in Resources.FindObjectsOfTypeAll<ObjectInteractionHandler>())
+                if (asset != null && !asset.gameObject.scene.IsValid() && asset.transform.parent == null && asset.name == r.Prefab)
+                    return asset.gameObject;
+            foreach (ObjectInteractionHandler model in models.Values)
+                if (TypeField.GetValue(model).ToString() == r.ItemType)
+                {
+                    Plugin.Log.LogInfo("[Items] No '" + r.Prefab + "' here: '" + model.name + "' stands in for '" + r.Name + "'");
+                    return model.gameObject;
+                }
+            if (!_noModel.ContainsKey(r.Key))
+                Plugin.Log.LogWarning("[Items] Nothing here can stand in for '" + r.Name + "' (" + r.Prefab + ", NetId " + r.NetId + "); it is not seen on this copy");
+            _noModel[r.Key] = Time.unscaledTime + 5f;
+            return null;
         }
 
         // A copy of a like thing, told what it is before its Start.
