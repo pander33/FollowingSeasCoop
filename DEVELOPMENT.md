@@ -2,10 +2,10 @@
 
 Technical details and the history of changes. What a player needs is in [`README.md`](README.md).
 
-- Game: Following Seas (Whipstaff Games, Steam app 2895440), Steam build 25792767,
-  Unity 6000.3.20f1 on Mono; the game's assemblies target .NET Standard 2.1.
-- Mod: a BepInEx 5.4.23 plugin, `com.followingseas.coop`, version 0.1.0; released with wire protocol
-  12, current development tree uses protocol 21.
+- Game: Following Seas (Whipstaff Games, Steam app 2895440), Steam build 25793052 (its
+  `Assembly-CSharp.dll` is the same as build 25792767's), Unity 6000.3.20f1 on Mono; the game's
+  assemblies target .NET Standard 2.1.
+- Mod: a BepInEx 5.4.23 plugin, `com.followingseas.coop`, version 0.2.0, wire protocol 22.
 - Transport: LiteNetLib over UDP, port 7777 by default; the same datagrams can travel over Steam
   peer-to-peer (Facepunch.Steamworks) in place of an address.
 
@@ -20,8 +20,6 @@ The plugin is built straight into `<GameDir>\BepInEx\plugins\FollowingSeasCoop\`
 the last two are in `libs/`, the game has no Steam library of its own). `GameDir` defaults to the
 path in the `.csproj`.
 The build fails with a file lock while the game runs from that folder.
-
-A release archive:
 
 The archives of a release:
 
@@ -63,18 +61,6 @@ There is no automated test of the game logic: it is verified in game. The wire l
 that needs no game, `Tools/ProtocolSmoke`. The debugging tools — the trace, the comparison of two
 copies' state, the Dev section, a script that starts a host and a guest side by side — are
 described in [`Tools/README.md`](Tools/README.md).
-
-### Hand-grip review fixes (2026-10-18)
-
-Hammer and lantern have dedicated closed Handle grips: the hammer palm faces sideways and
-the lantern palm faces down in the tool frame. Other one-hand tool grips are unchanged.
-Source review and Release build pass; these orientations still need an in-game visual check.
-
-Protocol 21 is unchanged. Finger restoration leaves newer animation untouched; finger closure
-has its own smoothed contact weight. Wheel targets and palm frames share the collider-local
-plane; spheres and capsules use radial normals. Non-eye tool correction ends with a primary-hand
-projection if two grips conflict. Release: 0 warnings / 0 errors; ProtocolSmoke: 228 checks passed.
-Visual validation on all six crew models and profiling of humanoid pose conversion remain open.
 
 ## Model
 
@@ -145,7 +131,7 @@ ship's Reset mode. Known and left alone: the gust phase steps on a guest when fr
 More detail: the game's item mechanics, as read from the decompile before the item stages were
 written, are in [`ITEMS_TECHNICAL.md`](ITEMS_TECHNICAL.md) (Russian).
 
-### Player animation status (development tree, protocol 21)
+### Player animation
 
 - Implemented: directional walking and running, procedural crouching and crouch-walking, ladder
   climbing, pitch shared between the chest, neck and head, and two-bone arm IK for carried things,
@@ -162,21 +148,40 @@ written, are in [`ITEMS_TECHNICAL.md`](ITEMS_TECHNICAL.md) (Russian).
   restored from the unconditional update, independent of participation. Control palm frames use
   collider faces and wheel-plane/rim tangents rather than object pivots. Unreachable non-eye tools
   are moved towards the arms' reachable space; finger closure fades with palm/contact distance.
-  These grips still require visual acceptance on all crew models.
+  Restoring fingers leaves newer animation untouched. If two grips of a tool conflict, a final
+  projection gives the right hand priority. Hammer and lantern have closed handle grips: the
+  hammer's palm faces sideways, the lantern's down, in the tool's frame.
 - Missing: a swimming animation, avatar rowing/seated-at-oars animation, gun reloading,
   wheel regrips and dedicated winch, capstan, pump or rope operating cycles. Control IK
   uses collider geometry, not authored grip points on each moving mechanism.
 - Cargo crates are placed through the cargo panel/grid, not carried as inventory things; a crate
   carrying animation is not an outstanding requirement of the current game interaction.
-- Verification: the maintainer checked directional walking/running, crouching and tool appearance.
-  The journal also records limited spyglass/quadrant and clock/shot-counter observations. Latest
-  gun-height and hand adjustments, ladder, look pitch, carried-item grips and control grips still
-  need visual acceptance; shot smoke and sound were not confirmed. Implementation is not acceptance.
 
 ## History of changes
 
-Version 0.1.0 is the first release; the plugin version did not change while it was written, the
-wire protocol did.
+The plugin version changes only when a release is formed; the wire protocol changes between
+releases, and each row gives the protocol it introduced.
+
+### 0.2.0
+
+Protocol 22; 0.1.0 (protocol 12) does not connect to it.
+
+| Date | Protocol | Change |
+|---|---|---|
+| 2026-10-12 | 12 | Dev buttons: water in the hull, harvesting, delivering and abandoning a contract, a hand aboard or ashore, a guest's world loaded again. |
+| 2026-10-15 | 13 | A channel for other mods (`ModChannel`, message `ModData`): Following Seas Omens shows the host's night events to its guests. |
+| 2026-10-17 | 13 | `ModChannel` for Omens: addressed channels (`RegisterPeer`, `Members`, `SessionIdentity`) and a number carried with a trolled fish. |
+| 2026-10-17 | 14 | The lantern in another player's hand gives light; a guest's fast travel by the chart moves the host's ship. |
+| 2026-10-17 | 15 | The shipyard: shared ship plans and payments; a ship launched by anyone is everybody's. The hull's pose names its ship. |
+| 2026-10-17 | 16 | Audit fixes: the store ashore, debts as differences, trade and payment dialogs opened before another player's change, shipyard payments made at once, the chart's courses and markers, a barrel bought by two hands at once, late packets of players, the rowboat and things, a refused hand on a control. |
+| 2026-10-18 | 17 | The journal's world pages (notes read, places found) are shared; a guest whose world was loaded again gets the journal lines written since it joined. |
+| 2026-10-18 | 17 | The fish sale dialog keeps fish another player put in or sold while it was open. |
+| 2026-10-18 | 18 | A fish taken off a hook by two players at once goes to one of them; two players mending one leak at once both count; changes of a contract end the same on every copy. |
+| 2026-10-18 | 18 | A hunt's yield is shown to a copy that never saw such an animal. |
+| 2026-10-18 | 19 | Another player's body: walking and running in every direction, crouching, climbing a ladder, the head following the look; a tool or a carried thing in its hands. |
+| 2026-10-18 | 20 | Raised tool poses, quadrant and chronometer readings, remote gunshot sounds, particles and recoil, and transmitted hand targets for ship controls. |
+| 2026-10-18 | 21 | Procedural palm orientation and finger grips for tools, carried things and controls; control snapshots include palm rotations. Hammer and lantern grips. |
+| 2026-10-18 | 22 | Each player's look: crew model and part materials, chosen on the Character page. |
 
 ### 0.1.0
 
@@ -199,21 +204,8 @@ wire protocol did.
 | 2026-10-11 | 11 | The rowboat, crew orders and the crew's looks, the trolling reel, mooring line length. |
 | 2026-10-11 | 12 | The crew roster; the pumps the crew works. |
 | 2026-10-11 | 12 | `Dev/Window` keeps test copies windowed. |
-| 2026-10-18 | 22 | Each player's look: crew model and part materials, chosen on the Character page (development tree, after 0.1.0). |
 | 2026-10-11 | 12 | Dev buttons: a contract, a crate, weather, time, teleports, mending a leak. |
 | 2026-10-11 | 12 | Dev button *Make a thing*: a thing made while the game runs is shared. |
 | 2026-10-11 | 12 | Release 0.1.0 prepared: player's README, this file, the release script. |
 | 2026-10-11 | 12 | Hosting and joining through Steam, in the Co-op page: friends list, Steam ID, friends only. |
 | 2026-10-11 | 12 | Two release archives: complete with BepInEx 5.4.23.5, and the plugin alone. |
-| 2026-10-12 | 12 | Dev buttons: water in the hull, harvesting, delivering and abandoning a contract, a hand aboard or ashore, a guest's world loaded again. |
-| 2026-10-15 | 13 | A channel for other mods (`ModChannel`, message `ModData`): Following Seas Omens shows the host's night events to its guests. |
-| 2026-10-17 | 13 | `ModChannel` for Omens: addressed channels (`RegisterPeer`, `Members`, `SessionIdentity`) and a number carried with a trolled fish. |
-| 2026-10-17 | 14 | The lantern in another player's hand gives light; a guest's fast travel by the chart moves the host's ship. |
-| 2026-10-17 | 15 | The shipyard: shared ship plans and payments; a ship launched by anyone is everybody's. The hull's pose names its ship. |
-| 2026-10-17 | 16 | Audit fixes: the store ashore, debts as differences, trade and payment dialogs opened before another player's change, shipyard payments made at once, the chart's courses and markers, a barrel bought by two hands at once, late packets of players, the rowboat and things, a refused hand on a control. |
-| 2026-10-18 | 17 | The journal's world pages (notes read, places found) are shared; a guest whose world was loaded again gets the journal lines written since it joined. |
-| 2026-10-18 | 17 | The fish sale dialog keeps fish another player put in or sold while it was open. |
-| 2026-10-18 | 18 | A fish taken off a hook by two players at once goes to one of them; two players mending one leak at once both count; changes of a contract end the same on every copy. |
-| 2026-10-18 | 19 | Another player's body: walking and running in every direction, crouching, climbing a ladder, the head following the look; a tool or a carried thing in its hands. |
-| 2026-10-18 | 20 | Raised tool poses, quadrant and chronometer readings, remote gunshot sounds/particles/recoil, and transmitted hand targets for ship controls. Adjusted gun height and separated/raised its hand grips; final visual acceptance remains open. |
-| 2026-10-18 | 21 | Procedural palm orientation and finger grips for tools, carried things and controls; control snapshots include palm rotations. Visual acceptance remains open. |

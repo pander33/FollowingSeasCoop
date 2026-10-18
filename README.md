@@ -1,6 +1,6 @@
 # ⚓ Following Seas Co-op
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/pander33/FollowingSeasCoop/releases/latest)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/pander33/FollowingSeasCoop/releases/latest)
 [![Game](https://img.shields.io/badge/game-Following%20Seas-1b2838?logo=steam&logoColor=white)](https://store.steampowered.com/app/2895440/)
 [![BepInEx](https://img.shields.io/badge/BepInEx-5.4.23.5-orange)](https://github.com/BepInEx/BepInEx/releases)
 [![Players](https://img.shields.io/badge/players-2--16-brightgreen)](#-play)
@@ -38,8 +38,8 @@ archives:
 
 | Archive | For whom |
 |---|---|
-| `FollowingSeasCoop-0.1.0.zip` | **Most players.** The mod with BepInEx 5.4.23.5 inside: nothing else to download. |
-| `FollowingSeasCoop-0.1.0-plugin-only.zip` | A game that already has BepInEx 5, version 5.4.23.5 or newer. |
+| `FollowingSeasCoop-0.2.0.zip` | **Most players.** The mod with BepInEx 5.4.23.5 inside: nothing else to download. |
+| `FollowingSeasCoop-0.2.0-plugin-only.zip` | A game that already has BepInEx 5, version 5.4.23.5 or newer. |
 
 Steps:
 
@@ -121,7 +121,8 @@ ends for everybody.
   winches, doors, lanterns and ballast.
 - 🛢️ Barrels and sacks can be carried, put down and thrown by anyone.
 - 💰 One purse and one set of stores: money, provisions aboard and in the store ashore, debts, the
-  journal (contracts, notes read and places found) and contracts belong to the whole crew. A delivery by any player pays the common purse.
+  journal (contracts, notes read and places found) and contracts belong to the whole crew. A
+  delivery by any player pays the common purse.
 - 🗺️ The chart: courses and markers drawn by anyone are on everybody's chart. A change made while
   your own chart is open shows the next time you open it.
 - 📦 Cargo: anyone can load, move, unload and deliver crates.
@@ -133,14 +134,16 @@ ends for everybody.
   crew panel are carried out.
 - ⚓ The shipyard: plans, payments and materials are shared, and a ship launched by anyone becomes
   everybody's ship. Whoever stood on the old deck is put aboard the new one.
+- 🧍 Other players walk, run, crouch and climb ladders, look where they look, and hold what they
+  hold: a tool, a barrel, the wheel or a rope. A lantern in their hand gives light, and their
+  gunshot is seen and heard.
+- 🎭 Your look: if you choose nothing, each player gets a different crew model. Choose a crew
+  model on the Co-op page, under **Character**, and for most models which model each part of the
+  clothes takes its colours from. Everybody sees it, and it is kept for your next games.
 
-- 🧍 Your look: if you choose nothing, each player gets a different crew model. Choose a crew model on the Co-op page, under **Character**, and for most models
-  which model each part of the clothes takes its colours from. Everybody sees it, and it is kept
-  for your next games.
 **Not shared:** living animals (each player sees their own until one is shot), a fish in another
-player's hand, the view through another player's spyglass, and another player's rowing animation.
-The development build also reproduces gunshots and raised tool poses; visual and sound checks
-are still in progress.
+player's hand, the view through another player's spyglass, and another player's swimming and
+rowing: their body does not move as it would.
 
 ## 💡 Good to know
 
@@ -179,7 +182,7 @@ Leave the `Dev` section alone: it is for developing the mod.
 
 - **There is no Co-op button on the title screen.** The archive was not unpacked into the game
   folder itself: check step 2 of [Install](#-install). A folder inside a folder
-  (`...\Following Seas\FollowingSeasCoop-0.1.0\BepInEx`) is the usual mistake.
+  (`...\Following Seas\FollowingSeasCoop-0.2.0\BepInEx`) is the usual mistake.
 - **The host is not in the list.** The list shows Steam friends who host and games on your own
   network. For any other, type the host's address or Steam ID instead.
 - **The dialog says Steam is not running.** Start Steam, then open the Co-op dialog again. The
