@@ -168,3 +168,5 @@ wire protocol did.
 | 2026-10-17 | 15 | The shipyard: shared ship plans and payments; a ship launched by anyone is everybody's. The hull's pose names its ship. |
 | 2026-10-17 | 16 | Audit fixes: the store ashore, debts as differences, trade and payment dialogs opened before another player's change, shipyard payments made at once, the chart's courses and markers, a barrel bought by two hands at once, late packets of players, the rowboat and things, a refused hand on a control. |
 | 2026-10-18 | 17 | The journal's world pages (notes read, places found) are shared; a guest whose world was loaded again gets the journal lines written since it joined. |
+| 2026-10-18 | 17 | The fish sale dialog keeps fish another player put in or sold while it was open. |
+| 2026-10-18 | 18 | A fish taken off a hook by two players at once goes to one of them; two players mending one leak at once both count; changes of a contract end the same on every copy. |

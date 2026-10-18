@@ -4,6 +4,7 @@ using System.Reflection;
 using FollowingSeasCoop.Net;
 using FollowingSeasCoop.Runtime;
 using HarmonyLib;
+using LiteNetLib;
 using UnityEngine;
 
 namespace FollowingSeasCoop.Sync
@@ -33,6 +34,10 @@ namespace FollowingSeasCoop.Sync
         private static readonly FieldInfo TrollOuterField = AccessTools.Field(typeof(TrollController), "fishPointPool");
         private static readonly FieldInfo TrollInnerField = AccessTools.Field(typeof(TrollController), "fishPointPoolInner");
         private static readonly FieldInfo HelperWeightsField = AccessTools.Field(typeof(TrollWeightHelper), "weights");
+        private static readonly FieldInfo FishBodyField = AccessTools.Field(typeof(ObjectInteractionHandler), "interactionRB");
+        private static readonly FieldInfo FishColliderField = AccessTools.Field(typeof(ObjectInteractionHandler), "collider");
+        private static readonly FieldInfo FishParentField = AccessTools.Field(typeof(ObjectInteractionHandler), "parent");
+        private static readonly FieldInfo FishNullTimeField = AccessTools.Field(typeof(ObjectInteractionHandler), "nullTime");
 
         /// <summary>The hooks are made by the lines' own Start; they are waited for this long.</summary>
         private const float HooksWait = 20f;
@@ -45,6 +50,9 @@ namespace FollowingSeasCoop.Sync
         private Slot[] _leakSlots = new Slot[0];
         private Slot[] _weightSlots = new Slot[0];
         private Slot[] _hookSlots = new Slot[0];
+        // Guest: whether each hook's fish is in the local hand, and since when.
+        private bool[] _fishHeld = new bool[0];
+        private float[] _fishHeldAt = new float[0];
         private bool _hooksBound;
         private float _hooksUntil;
         private static bool s_warnedHull;
@@ -96,6 +104,8 @@ namespace FollowingSeasCoop.Sync
             _leakSlots = new Slot[0];
             _weightSlots = new Slot[0];
             _hookSlots = new Slot[0];
+            _fishHeld = new bool[0];
+            _fishHeldAt = new float[0];
             _hooksBound = true;
         }
 
@@ -123,6 +133,8 @@ namespace FollowingSeasCoop.Sync
             _hooksBound = true;
             _hooks.AddRange(hooks);
             _hookSlots = MakeSlots(ControlKind.FishPoint, _hooks.Count);
+            _fishHeld = new bool[_hooks.Count];
+            _fishHeldAt = new float[_hooks.Count];
             if (_hooks.Count > 0) Plugin.Log.LogInfo("[Controls] Trolling lines bound: hooks " + _hookSlots.Length);
         }
 
@@ -178,6 +190,15 @@ namespace FollowingSeasCoop.Sync
                     // The number is the host's, as is the bite: a guest's own reading would argue with it.
                     reading.Text = _net.IsClient ? slot.Text
                         : hook.fishOn && hook.fish != null ? ModChannel.CatchUnitsText(hook.fish) : "";
+                    if (_net.IsClient)
+                    {
+                        // The game also takes a bite off a hook whose fish is already in a hand; only
+                        // a fish picked up just now is a take the host must decide on.
+                        bool held = Fish(hook)?.isHeld == true;
+                        if (held && !_fishHeld[slot.Index]) _fishHeldAt[slot.Index] = Time.unscaledTime;
+                        _fishHeld[slot.Index] = held;
+                        reading.C = held && Time.unscaledTime - _fishHeldAt[slot.Index] < 0.5f ? 1f : 0f;
+                    }
                     return true;
                 }
                 default: return false;
@@ -210,6 +231,10 @@ namespace FollowingSeasCoop.Sync
                     bool on = slot.A > 0.5f;
                     if (on && slot.B > 0f) hook.SetScale(slot.B);
                     if (on && hook.fish != null) ModChannel.GiveCatchUnits(hook.fish, slot.Text);
+                    // As the game's bite does: a fish still on its way back from the hold is put on
+                    // the hook, or its reset would take the new bite off. One in the hand stays there.
+                    if (on && hook.fish != null && hook.fish.transform.parent != hook.transform && Fish(hook)?.isHeld != true)
+                        hook.fish.transform.parent = hook.transform;
                     hook.fishOn = on;
                     return true;
                 }
@@ -264,6 +289,74 @@ namespace FollowingSeasCoop.Sync
                     return;
                 }
             weight.deployed = false;
+        }
+
+        // Host: a guest's blows of the hammer are a step from the strength its copy knew, so blows of
+        // two players at once both count and a growth meanwhile is not undone.
+        private void StepLeak(Slot slot, ControlMsg msg)
+        {
+            var here = default(Reading);
+            if (msg.A < 0.5f || !ReadHull(slot, ref here)) return;
+            if (here.A < 0.5f) msg.A = msg.B = 0f;
+            else msg.B = Mathf.Max(0f, here.B + msg.B - msg.C);
+            msg.C = 0f;
+        }
+
+        private static ObjectInteractionHandler Fish(FishPoint hook) =>
+            hook.fish != null ? hook.fish.GetComponent<ObjectInteractionHandler>() : null;
+
+        // Host: each copy lets its own player take the fish off a hook; the first take the host
+        // hears of while the fish is still on here gets it, a later one is told who has it (C = 1
+        // marks that answer). A hook already empty here with no hand on its fish: nothing to do.
+        private bool FishTaken(Slot slot, ControlMsg msg, uint sender)
+        {
+            if (msg.A > 0.5f) return false;
+            FishPoint hook = _hooks[slot.Index];
+            if (hook == null) return false;
+            bool hand = msg.C > 0.5f;
+            msg.C = 0f;
+            if (hook.fishOn)
+            {
+                if (hand) slot.Holder = sender;
+                return false;
+            }
+            if (!hand) return true;
+            uint holder = Fish(hook)?.isHeld == true ? _net.MyNetId : slot.Holder != 0 ? slot.Holder : _net.MyNetId;
+            Refused++;
+            CoopTrace.Note("Controls", "refused", Name(slot), "fish of " + sender + ", taken by " + holder);
+            var state = new ControlStateMsg();
+            Fill(state, slot, holder);
+            state.A = state.B = 0f;
+            state.C = 1f;
+            _net.SendTo(sender, state, DeliveryMethod.ReliableOrdered);
+            return true;
+        }
+
+        // Guest: the host refused this player's take of this hook's fish. The fish it took meanwhile
+        // goes back to its hook the way the game resets it, or it would reach the hold twice.
+        private void LoseFish(Slot slot, uint holder)
+        {
+            FishPoint hook = _hooks[slot.Index];
+            ObjectInteractionHandler fish = hook != null ? Fish(hook) : null;
+            if (fish == null || !fish.isHeld) return;
+            fish.Hold(false);
+            if (fish.uiPrompt != null && fish.uiPrompt.activeSelf) fish.uiPrompt.SetActive(false);
+            InteractionController controller = InteractionController.interactionInstance;
+            if (controller != null) controller.ExternalStopInteractingAndUnlock();
+            if (FishColliderField?.GetValue(fish) is Collider collider) collider.isTrigger = true;
+            if (FishBodyField?.GetValue(fish) is Rigidbody body)
+            {
+                body.mass = 0f;
+                body.useGravity = false;
+                body.isKinematic = true;
+            }
+            fish.transform.parent = hook.transform;
+            FishParentField?.SetValue(fish, hook.transform);
+            FishNullTimeField?.SetValue(fish, 0f);
+            fish.transform.localPosition = Vector3.zero;
+            hook.fishOn = false;
+            CoopTrace.Note("Controls", "fish lost", Name(slot), "taken by " + holder);
+            _notice = _net.GetPlayerName(holder) + " took this fish first";
         }
 
         // -----------------------------------------------------------------

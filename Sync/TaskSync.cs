@@ -44,6 +44,10 @@ namespace FollowingSeasCoop.Sync
         private readonly List<TaskStateMsg> _waiting = new List<TaskStateMsg>();
         private readonly HashSet<string> _seen = new HashSet<string>(StringComparer.Ordinal);
         private readonly List<string> _lost = new List<string>();
+        // Guest: the last strings it sent of each contract or product, and the ones whose latest
+        // change here was its own — the host's copy of such a string is only its own coming back.
+        private readonly Dictionary<string, List<string>> _sentData = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        private readonly HashSet<string> _mine = new HashSet<string>(StringComparer.Ordinal);
         private TaskPanelHandler _panel;
         private float _nextPollAt;
         private bool _warned;
@@ -56,6 +60,7 @@ namespace FollowingSeasCoop.Sync
         public void Clear()
         {
             _known.Clear(); _gone.Clear(); _waiting.Clear();
+            _sentData.Clear(); _mine.Clear();
             Array.Clear(_products, 0, _products.Length);
             _panel = null;
             Sent = Applied = 0;
@@ -154,6 +159,7 @@ namespace FollowingSeasCoop.Sync
         {
             _panel = panel;
             _known.Clear(); _gone.Clear();
+            _sentData.Clear(); _mine.Clear();
             foreach (GameObject obj in panel.acceptedTaskObjects)
             {
                 TaskHandler task = obj != null ? obj.GetComponent<TaskHandler>() : null;
@@ -213,8 +219,28 @@ namespace FollowingSeasCoop.Sync
         private void Send(TaskStateMsg msg)
         {
             if (_net.IsHost) _net.Broadcast(msg, DeliveryMethod.ReliableOrdered);
-            else _net.SendToHost(msg, DeliveryMethod.ReliableOrdered);
+            else
+            {
+                _net.SendToHost(msg, DeliveryMethod.ReliableOrdered);
+                string key = Key(msg);
+                if (!_sentData.TryGetValue(key, out List<string> sent)) _sentData[key] = sent = new List<string>();
+                sent.Add(msg.Data ?? "");
+                if (sent.Count > 8) sent.RemoveAt(0);
+                _mine.Add(key);
+            }
             Sent++;
+        }
+
+        private static string Key(TaskStateMsg msg) =>
+            msg.Kind == TaskKind.Contract ? "c" + msg.Id : "p" + (int)msg.Kind;
+
+        // Guest: the host passes every change on to its sender too. One of this copy's own strings
+        // coming back while its latest change is its own is older than what it has, or the same.
+        private bool OwnEcho(TaskStateMsg msg)
+        {
+            if (msg.Kind == TaskKind.Roster || msg.Deleted || (msg.Kind == TaskKind.Contract && CompleteIn(msg.Data))) return false;
+            string key = Key(msg);
+            return _mine.Contains(key) && _sentData.TryGetValue(key, out List<string> sent) && sent.Contains(msg.Data ?? "");
         }
 
         /// <summary>The local changes now, not at the next look.</summary>
@@ -263,18 +289,27 @@ namespace FollowingSeasCoop.Sync
         public void OnTask(TaskStateMsg msg, NetPeer from)
         {
             if (!Usable) return;
-            if (_net.IsHost)
-                _net.Broadcast(msg, DeliveryMethod.ReliableOrdered, readyOnly: true, exceptNetId: _net.PlayerNetIdForPeer(from));
             TaskPanelHandler panel = Panel();
-            if (panel == null || panel != _panel) { _waiting.Add(msg); return; }
+            if (panel == null || panel != _panel)
+            {
+                if (_net.IsHost)
+                    _net.Broadcast(msg, DeliveryMethod.ReliableOrdered, readyOnly: true, exceptNetId: _net.PlayerNetIdForPeer(from));
+                _waiting.Add(msg);
+                return;
+            }
             // The local changes first, so the incoming one is not sent back as a local change.
             Poll(panel);
+            if (_net.IsClient && OwnEcho(msg)) return;
             Apply(panel, msg);
+            // Passed on after the host's own changes, and to its sender too: every copy then ends on
+            // the host's order of changes, whichever of two changes of a contract came first.
+            if (_net.IsHost) _net.Broadcast(msg, DeliveryMethod.ReliableOrdered, readyOnly: true);
         }
 
         private void Apply(TaskPanelHandler panel, TaskStateMsg msg)
         {
             Applied++;
+            _mine.Remove(Key(msg));
             if (msg.Kind == TaskKind.Roster) { ApplyRoster(panel, msg); return; }
             if (msg.Kind != TaskKind.Contract) { ApplyProduct(panel, msg); return; }
             string id = msg.Id ?? "";

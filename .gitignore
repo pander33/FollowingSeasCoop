@@ -7,6 +7,8 @@ dist/
 # Working documents, kept out of the public repository (as in SailwindCoop).
 CLAUDE.md
 AGENTS.md
+SYNC.md
+RELEASING.md
 СОСТОЯНИЕ.md
 GAME_INTERACTIONS.md
 

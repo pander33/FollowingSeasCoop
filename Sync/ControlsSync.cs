@@ -116,6 +116,15 @@ namespace FollowingSeasCoop.Sync
         public int Refused { get; private set; }
         private float _contestedAt = -100f;
         private uint _contestedBy;
+        private string _notice;
+
+        /// <summary>Something the local player should see: who had the fish it took.</summary>
+        public string PopNotice()
+        {
+            string notice = _notice;
+            _notice = null;
+            return notice;
+        }
 
         /// <summary>The local player has a control in hand that another player took first.</summary>
         public bool Contested => Time.unscaledTime - _contestedAt < 1.5f;
@@ -295,6 +304,8 @@ namespace FollowingSeasCoop.Sync
             // not undo it here: it waits, like a state for a control in hand, and by then the host
             // has said what it reads after this change. Every further change starts the wait anew.
             if (_net.IsClient && GuestSpeaksOnChange(slot.Kind)) slot.HeldAt = now;
+            // The strength the blows started from: the host takes the step, not the figure.
+            if (_net.IsClient && slot.Kind == ControlKind.Leak) reading.C = slot.B;
 
             if (!driven) Store(slot, reading);
             Publish(slot, now, local);
@@ -357,6 +368,8 @@ namespace FollowingSeasCoop.Sync
             // The first hand keeps a control: the host's own on the host's ship, otherwise the guest
             // who reported it first and has not been silent since. A later hand is told what it reads.
             if (now - slot.HeldAt < HoldGrace) { Refuse(slot, sender, _net.MyNetId); return; }
+            if (msg.Kind == ControlKind.Leak) StepLeak(slot, msg);
+            if (msg.Kind == ControlKind.FishPoint && FishTaken(slot, msg, sender)) return;
             if (Leased(msg.Kind))
             {
                 if (slot.Holder != 0 && slot.Holder != sender && now - slot.HolderAt <= RemoteHold)
@@ -387,6 +400,8 @@ namespace FollowingSeasCoop.Sync
                 _contestedAt = now;
                 _contestedBy = msg.Holder;
             }
+            if (msg.Kind == ControlKind.FishPoint && msg.C > 0.5f && msg.Holder != 0 && msg.Holder != _net.MyNetId)
+                Guard(() => LoseFish(slot, msg.Holder));
             Take(slot, msg, now);
         }
 
@@ -732,6 +747,7 @@ namespace FollowingSeasCoop.Sync
             Unbind();
             Sent = Applied = Refused = 0;
             _contestedAt = -100f;
+            _notice = null;
             s_guest = false;
             s_pumped = 0f;
             s_touchedRope = null;

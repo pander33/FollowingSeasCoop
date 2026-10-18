@@ -554,6 +554,8 @@ namespace FollowingSeasCoop.Runtime
                     }
                     string carried = Items.PopNotice();
                     if (carried != null) Flash(carried);
+                    string fish = Controls.PopNotice();
+                    if (fish != null) Flash(fish);
                     string loading = Cargo.PopNotice();
                     if (loading != null) Flash(loading);
                     string rescued = Rescue.Tick();
