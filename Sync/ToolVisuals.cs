@@ -23,11 +23,8 @@ namespace FollowingSeasCoop.Sync
     {
         private const float SwingSeconds = 0.3f;
         private const float SwingDegrees = 40f;
-        /// <summary>
-        /// A tool sits a hand's breadth from its owner's eye — inside the face of a body seen from
-        /// outside. The copy is held this much further along the look.
-        /// </summary>
-        private const float FaceClearance = 0.2f;
+        /// <summary>The eyes above the head bone of a crew model, which sits at the top of the neck.</summary>
+        private const float HeadToEye = 0.08f;
 
         private static readonly FieldInfo ButtonsField = AccessTools.Field(typeof(InventoryManager), "buttons");
         private static readonly FieldInfo ItemField = AccessTools.Field(typeof(InventoryButton), "item");
@@ -84,7 +81,7 @@ namespace FollowingSeasCoop.Sync
             if (camera == null) return;
             float height = Vector3.Dot(camera.transform.position - feet, up);
             if (height < 0.2f || height > 3f) return;
-            if (player.state == PlayerHandler.MovementState.crouching) { s_eyeCrouching = height; s_crouchMeasured = true; }
+            if (PlayerSync.IsCrouching(player)) { s_eyeCrouching = height; s_crouchMeasured = true; }
             else if (player.state != PlayerHandler.MovementState.swimming)
             {
                 s_eyeStanding = height;
@@ -96,14 +93,37 @@ namespace FollowingSeasCoop.Sync
         // Another player's tool
         // -----------------------------------------------------------------
 
+        // How a tool is held seen from outside. The first-person model is built for its owner's
+        // camera: five times its size and off to the side, so the copy is brought to a real size
+        // and put where hands hold it.
+        private enum Hold { Lantern, Spyglass, Gun, TwoHands, OneHand }
+
         private GameObject _tool;
         private byte _kind, _use;
         private bool _hasUse;
         private float _swingAt = -10f, _retryAt;
         private byte _warnedKind;
+        private Hold _hold;
+        private bool _measured;
+        // The drawn box of the copy in the frame it is held in, at its real size; the turn that lays
+        // a long tool along that frame's forward; the frame of this frame's placing.
+        private Vector3 _center, _extents;
+        private Quaternion _align = Quaternion.identity, _frame = Quaternion.identity;
+        // The meshes of the tool itself, which its size is taken from: the log's copy also has a
+        // long piece of line on another layer.
+        private readonly List<Renderer> _body = new List<Renderer>();
+
+        /// <summary>The tool is held to the eye: it stays there whatever the hands do.</summary>
+        public bool AtEye => _tool != null && _hold == Hold.Spyglass;
+
+        /// <summary>Moves the tool for this frame, into a hand that could not quite reach it.</summary>
+        public void Shift(Vector3 by)
+        {
+            if (_tool != null) _tool.transform.position += by;
+        }
 
         /// <summary>Every frame after the avatar is placed.</summary>
-        public void Apply(GameObject avatar, float pitch, bool crouching, byte kind, byte use)
+        public void Apply(GameObject avatar, Transform head, float pitch, bool crouching, byte kind, byte use)
         {
             float now = Time.unscaledTime;
             if (kind != _kind || (kind != 0 && _tool == null && now >= _retryAt))
@@ -112,7 +132,7 @@ namespace FollowingSeasCoop.Sync
                 _kind = kind;
                 if (kind != 0)
                 {
-                    try { _tool = Build(kind, avatar); }
+                    try { _tool = Build(kind, avatar, _body); }
                     catch (Exception e)
                     {
                         // Tried again every two seconds: said once per tool.
@@ -124,25 +144,209 @@ namespace FollowingSeasCoop.Sync
                 }
             }
             if (_tool == null) return;
+            if (!_measured && !Measure())
+            {
+                // Nothing of it is drawn to measure: no copy rather than one left where it was measured.
+                if (_warnedKind != kind) Plugin.Log.LogWarning("[Tools] The copy of the tool in slot " + (kind - 1) + " has nothing drawn to hold");
+                _warnedKind = kind;
+                UnityEngine.Object.Destroy(_tool);
+                _tool = null; _body.Clear();
+                _retryAt = now + 2f;
+                return;
+            }
 
             if (_hasUse && use != _use) _swingAt = now;
             _use = use; _hasUse = true;
 
             Transform body = avatar.transform;
-            Quaternion look = body.rotation * Quaternion.Euler(pitch, 0f, 0f);
+            Vector3 up = body.up, right = body.right;
+            Quaternion look = body.rotation * Quaternion.Euler(Mathf.Clamp(pitch, -70f, 70f), 0f, 0f);
+            Vector3 ahead = look * Vector3.forward;
+            // The avatar's own head where it has one: its crouch is not the camera's.
+            Vector3 eye = head != null ? head.position + up * HeadToEye
+                : body.position + up * (crouching ? s_eyeCrouching : s_eyeStanding);
+
+            // The point of the tool (in its frame) that goes to a place by the body.
+            Quaternion rotation = look;
+            Vector3 point = _center, at;
+            switch (_hold)
+            {
+                case Hold.Lantern:
+                    // Hangs upright from the handle, held up before the chest.
+                    rotation = body.rotation;
+                    point = _center + Vector3.up * _extents.y;
+                    at = eye - up * 0.25f + right * 0.2f + body.forward * 0.38f;
+                    break;
+                case Hold.Spyglass:
+                    point = _center - Vector3.forward * _extents.z;
+                    at = eye + ahead * 0.04f;
+                    break;
+                case Hold.Gun:
+                    // The butt against the right shoulder, the barrel along the look.
+                    point = _center - Vector3.forward * _extents.z;
+                    at = eye - up * 0.3f + right * 0.16f + ahead * 0.05f;
+                    break;
+                case Hold.OneHand:
+                    at = eye - up * 0.35f + right * 0.15f + ahead * 0.35f;
+                    break;
+                default:
+                    at = eye - up * 0.3f + ahead * 0.35f;
+                    break;
+            }
             float swing = now - _swingAt;
-            if (swing < SwingSeconds) look *= Quaternion.Euler(SwingDegrees * Mathf.Sin(Mathf.PI * swing / SwingSeconds), 0f, 0f);
-            Vector3 eye = body.position + body.up * (crouching ? s_eyeCrouching : s_eyeStanding);
-            _tool.transform.SetPositionAndRotation(eye + look * Vector3.forward * FaceClearance, look);
+            if (swing < SwingSeconds) rotation *= Quaternion.Euler(-SwingDegrees * Mathf.Sin(Mathf.PI * swing / SwingSeconds), 0f, 0f);
+            _frame = rotation;
+            _tool.transform.SetPositionAndRotation(at - rotation * point, rotation * _align);
+        }
+
+        /// <summary>
+        /// Where the avatar's hands close on the tool this frame: the right one always, the left one
+        /// too for a tool held in both hands.
+        /// </summary>
+        public bool Grips(out Vector3 right, out Vector3 left, out bool both)
+        {
+            right = left = default; both = false;
+            if (_tool == null || !_measured) return false;
+            Vector3 origin = _tool.transform.position;
+            Vector3 c = _center, e = _extents;
+            Vector3 r, l = c;
+            switch (_hold)
+            {
+                case Hold.Lantern:
+                    r = c + Vector3.up * e.y;
+                    break;
+                case Hold.Spyglass:
+                    // Each hand from its own side of the tube, so the arms do not cross.
+                    r = c - Vector3.forward * (e.z * 0.45f) - Vector3.up * e.y + Vector3.right * (e.x + 0.02f);
+                    l = c + Vector3.forward * (e.z * 0.3f) - Vector3.up * e.y - Vector3.right * (e.x + 0.02f);
+                    both = true;
+                    break;
+                case Hold.Gun:
+                    // The right hand at the grip behind the trigger, the left under the fore-end.
+                    r = c - Vector3.forward * (e.z * 0.6f) - Vector3.up * (e.y * 0.2f);
+                    l = c - Vector3.forward * (e.z * 0.15f) - Vector3.up * (e.y * 0.2f);
+                    both = true;
+                    break;
+                case Hold.TwoHands:
+                    r = c + Vector3.right * (e.x + 0.03f);
+                    l = c - Vector3.right * (e.x + 0.03f);
+                    both = true;
+                    break;
+                default:
+                    // The handle, a third of the way up.
+                    r = c - Vector3.up * (e.y * 0.35f);
+                    break;
+            }
+            right = origin + _frame * r;
+            left = origin + _frame * l;
+            return true;
+        }
+
+        // A real size, metres, for the longest side of each tool.
+        private static float RealSize(Hold hold, string name)
+        {
+            switch (hold)
+            {
+                case Hold.Lantern: return 0.35f;
+                case Hold.Spyglass: return 0.45f;
+                case Hold.Gun: return 1.1f;
+                case Hold.TwoHands: return 0.3f;
+            }
+            return name.Contains("chronometer") ? 0.12f : name.Contains("hammer") ? 0.35f : 0.25f;
+        }
+
+        private static Hold HoldOf(string name)
+        {
+            if (name.Contains("lantern")) return Hold.Lantern;
+            if (name.Contains("spyglass")) return Hold.Spyglass;
+            if (name.Contains("FPSController")) return Hold.Gun;
+            if (name.Contains("quadrant") || name.Contains("compass")) return Hold.TwoHands;
+            return Hold.OneHand;
+        }
+
+        // Once, on the first frame of a copy: its size brought to a real one, its box in its own frame.
+        private bool Measure()
+        {
+            Transform t = _tool.transform;
+            _hold = HoldOf(_tool.name);
+            _align = _hold == Hold.Gun ? LongAxis(_tool) : Quaternion.identity;
+            t.SetPositionAndRotation(Vector3.zero, _align);
+            KeepMainPart();
+            if (!BodyBounds(out Bounds box)) return false;
+            float longest = Mathf.Max(box.size.x, Mathf.Max(box.size.y, box.size.z));
+            if (longest > 0.001f) t.localScale *= RealSize(_hold, _tool.name) / longest;
+            if (!BodyBounds(out box)) return false;
+            _center = box.center; _extents = box.extents;
+            _measured = true;
+            return true;
+        }
+
+        // A first-person tool carries more than the tool on its layer: the hammer's chisel and a brace,
+        // spheres and a curve by the gun. What is seen in a hand is the main part and what touches
+        // it; the rest is hidden on the copy, and is not measured.
+        private void KeepMainPart()
+        {
+            Renderer main = null;
+            float largest = -1f;
+            bool hammer = _tool.name.Contains("hammer");
+            foreach (Renderer renderer in _body)
+            {
+                if (renderer == null || !renderer.enabled) continue;
+                Vector3 s = renderer.bounds.size;
+                float volume = s.x * s.y * s.z;
+                bool named = hammer && renderer.name.Contains("hammer");
+                if (named) volume += 1e6f;
+                if (volume > largest) { largest = volume; main = renderer; }
+            }
+            if (main == null) return;
+            Bounds near = main.bounds;
+            near.Expand(near.size.magnitude * 0.3f);
+            foreach (Renderer renderer in _body)
+                if (renderer != null && !renderer.bounds.Intersects(near)) renderer.enabled = false;
+        }
+
+        private bool BodyBounds(out Bounds bounds)
+        {
+            bounds = default;
+            bool any = false;
+            foreach (Renderer renderer in _body)
+            {
+                if (renderer == null || !renderer.enabled) continue;
+                if (any) bounds.Encapsulate(renderer.bounds);
+                else { bounds = renderer.bounds; any = true; }
+            }
+            return any || AvatarIK.Bounds(_tool, out bounds);
+        }
+
+        // The turn that lays the longest side of the tool's largest mesh along forward, the far end
+        // ahead: the first-person gun is held slanting across the view.
+        private static Quaternion LongAxis(GameObject tool)
+        {
+            MeshFilter largest = null;
+            float volume = 0f;
+            foreach (MeshFilter filter in tool.GetComponentsInChildren<MeshFilter>())
+            {
+                if (filter.sharedMesh == null) continue;
+                Vector3 size = Vector3.Scale(filter.sharedMesh.bounds.size, filter.transform.lossyScale);
+                float v = Mathf.Abs(size.x * size.y * size.z);
+                if (v > volume) { volume = v; largest = filter; }
+            }
+            if (largest == null) return Quaternion.identity;
+            Vector3 s = largest.sharedMesh.bounds.size;
+            Vector3 axis = s.x >= s.y && s.x >= s.z ? Vector3.right : s.y >= s.z ? Vector3.up : Vector3.forward;
+            Vector3 along = Quaternion.Inverse(tool.transform.rotation) * (largest.transform.rotation * axis);
+            if (Vector3.Dot(along, Vector3.forward) < 0f) along = -along;
+            return Quaternion.FromToRotation(along, Vector3.forward);
         }
 
         public void Drop()
         {
             if (_tool != null) UnityEngine.Object.Destroy(_tool);
-            _tool = null; _kind = 0; _hasUse = false; _swingAt = -10f;
+            _tool = null; _kind = 0; _hasUse = false; _swingAt = -10f; _measured = false;
+            _body.Clear();
         }
 
-        private static GameObject Build(byte kind, GameObject avatar)
+        private static GameObject Build(byte kind, GameObject avatar, List<Renderer> body)
         {
             List<InventoryButton> buttons = Buttons();
             if (buttons == null || kind > buttons.Count || buttons[kind - 1] == null) return null;
@@ -172,7 +376,11 @@ namespace FollowingSeasCoop.Sync
                     int own = renderer.gameObject.layer;
                     if (own != 0 && own != toolLayer) UnityEngine.Object.DestroyImmediate(renderer);
                     // HandSelector gives the tool's meshes probes of its own; the copy has no HandSelector.
-                    else renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.BlendProbes;
+                    else
+                    {
+                        renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.BlendProbes;
+                        if (own == toolLayer) body.Add(renderer);
+                    }
                 }
                 // A component cannot be removed while another one requires it (Unity logs an error
                 // and leaves it). The first pass takes what requires — scripts, joints, filters —

@@ -19,6 +19,14 @@ namespace FollowingSeasCoop.Sync
     {
         private const byte FrameReal = 0, FrameShip = 1, FrameRowboat = 2;
 
+        // The game's crouch sets state to crouching and its StateHandler sets it back in the same
+        // Update; only this field lasts.
+        private static readonly System.Reflection.FieldInfo CrouchingField =
+            HarmonyLib.AccessTools.Field(typeof(PlayerHandler), "isCrouching");
+
+        internal static bool IsCrouching(PlayerHandler player) =>
+            CrouchingField != null ? (bool)CrouchingField.GetValue(player) : player.state == PlayerHandler.MovementState.crouching;
+
         private sealed class Remote
         {
             public uint NetId;
@@ -27,10 +35,22 @@ namespace FollowingSeasCoop.Sync
             public bool HasFrame;
             public GameObject Avatar;
             public Animator Animator;
-            public bool HasWalking, HasVertical, HasHorizontal, HasStand;
+            public bool HasWalking, HasVertical, HasHorizontal, HasStand, HasLadder, HasSpeed;
+            public Transform[] Spine;
+            // Hips, spine, then upper leg, lower leg and foot of the left and the right leg.
+            public Transform[] Legs;
+            public float Low;
+            // Upper arm, forearm and hand of the left and the right arm.
+            public Transform[] Arms;
+            // The left and the right middle finger's first bone: the line the hand points along.
+            public Transform[] Fingers;
+            public float LeftHold, RightHold;
+            public Vector3 LeftAt, RightAt;
             public Vector3 LastWorld;
             public bool HasLastWorld;
-            public float Speed;
+            public float Speed, Climb;
+            public Vector3 Step;
+            public PlayerFlags Flags;
             public bool Crouching;
             public byte Tool, ToolUse;
             public long ToolTick;
@@ -131,8 +151,10 @@ namespace FollowingSeasCoop.Sync
             _lastFrame = frame;
             _lastCaptureAt = now;
 
-            if (player.state == PlayerHandler.MovementState.crouching) state.Flags |= PlayerFlags.Crouching;
+            if (IsCrouching(player)) state.Flags |= PlayerFlags.Crouching;
             if (player.state == PlayerHandler.MovementState.swimming) state.Flags |= PlayerFlags.Swimming;
+            if (player.state == PlayerHandler.MovementState.sprinting) state.Flags |= PlayerFlags.Sprinting;
+            if (player.onLadder) state.Flags |= PlayerFlags.OnLadder;
 
             state.Tool = ToolVisuals.LocalKind();
             state.ToolUse = ToolVisuals.LocalUseCount;
@@ -186,6 +208,7 @@ namespace FollowingSeasCoop.Sync
             if (msg.Tick >= remote.ToolTick)
             {
                 remote.ToolTick = msg.Tick;
+                remote.Flags = msg.Flags;
                 remote.Crouching = (msg.Flags & PlayerFlags.Crouching) != 0;
                 remote.Tool = msg.Tool;
                 remote.ToolUse = msg.ToolUse;
@@ -236,8 +259,10 @@ namespace FollowingSeasCoop.Sync
                 }
                 remote.Avatar.transform.SetPositionAndRotation(world, rotation);
                 Animate(remote, deck);
+                Crouch(remote);
+                Look(remote, pitch);
                 // After the body: the tool hangs at its eye.
-                remote.Tools.Apply(remote.Avatar, pitch, remote.Crouching, remote.Tool, remote.ToolUse);
+                remote.Tools.Apply(remote.Avatar, remote.Spine?[3], pitch, remote.Crouching, remote.Tool, remote.ToolUse);
             }
             foreach (uint netId in _gone) Remove(netId);
         }
@@ -253,37 +278,212 @@ namespace FollowingSeasCoop.Sync
                     if (parameter.name == "stand" && parameter.type == AnimatorControllerParameterType.Bool) remote.HasStand = true;
                     if (parameter.name == "vertical" && parameter.type == AnimatorControllerParameterType.Float) remote.HasVertical = true;
                     if (parameter.name == "horizontal" && parameter.type == AnimatorControllerParameterType.Float) remote.HasHorizontal = true;
+                    if (parameter.name == "onladder" && parameter.type == AnimatorControllerParameterType.Bool) remote.HasLadder = true;
+                    if (parameter.name == "speed" && parameter.type == AnimatorControllerParameterType.Float) remote.HasSpeed = true;
+                }
+                if (remote.Animator.isHuman)
+                {
+                    remote.Spine = new[]
+                    {
+                        remote.Animator.GetBoneTransform(HumanBodyBones.Chest),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.UpperChest),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.Neck),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.Head),
+                    };
+                    remote.Legs = new[]
+                    {
+                        remote.Animator.GetBoneTransform(HumanBodyBones.Hips),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.Spine),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.LeftLowerLeg),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.LeftFoot),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.RightUpperLeg),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.RightLowerLeg),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.RightFoot),
+                    };
+                    if (System.Array.IndexOf(remote.Legs, null) >= 0) remote.Legs = null;
+                    remote.Arms = new[]
+                    {
+                        remote.Animator.GetBoneTransform(HumanBodyBones.LeftUpperArm),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.LeftLowerArm),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.LeftHand),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.RightUpperArm),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.RightLowerArm),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.RightHand),
+                    };
+                    if (System.Array.IndexOf(remote.Arms, null) >= 0) remote.Arms = null;
+                    remote.Fingers = new[]
+                    {
+                        remote.Animator.GetBoneTransform(HumanBodyBones.LeftMiddleProximal),
+                        remote.Animator.GetBoneTransform(HumanBodyBones.RightMiddleProximal),
+                    };
                 }
             }
             Plugin.Log.LogInfo("[Players] Avatar created for " + _net.GetPlayerName(remote.NetId) + " (NetId " + remote.NetId + ")");
         }
 
-        /// <summary>Drives the crew model's own walk parameters from how fast the avatar moves over the deck or the ground.</summary>
+        // How much of the look's pitch each of chest, upper chest, neck and head takes.
+        private static readonly float[] SpineShare = { 0.15f, 0.2f, 0.25f, 0.4f };
+
+        /// <summary>
+        /// Drives the crew model from how the avatar moves over the deck or the ground. The crew
+        /// controller holds more than the game's crew use: one blend tree of idle (0, 0), walking
+        /// (0.5) and running (1) in every direction, a kneel (<c>stand</c> false) and a ladder climb.
+        /// </summary>
         private static void Animate(Remote remote, Transform deck)
         {
             // Speed is measured in the frame the player walks in: on a sailing ship the world position
             // changes even when the player stands still.
-            Vector3 framePos = deck != null
-                ? deck.InverseTransformPoint(remote.Avatar.transform.position)
-                : remote.Avatar.transform.position;
+            Transform body = remote.Avatar.transform;
+            Vector3 framePos = deck != null ? deck.InverseTransformPoint(body.position) : body.position;
             float dt = Time.unscaledDeltaTime;
             if (remote.HasLastWorld && dt > 0.0001f)
             {
-                Vector3 step = framePos - remote.LastWorld;
-                step.y = 0f;
-                float speed = step.magnitude / dt;
-                if (speed < 30f) remote.Speed = Mathf.Lerp(remote.Speed, speed, Mathf.Clamp01(dt * 8f));
+                Vector3 step = (framePos - remote.LastWorld) / dt;
+                if (step.sqrMagnitude < 30f * 30f)
+                {
+                    float k = Mathf.Clamp01(dt * 8f);
+                    remote.Climb = Mathf.Lerp(remote.Climb, step.y, k);
+                    step.y = 0f;
+                    remote.Speed = Mathf.Lerp(remote.Speed, step.magnitude, k);
+                    remote.Step = Vector3.Lerp(remote.Step, step, k);
+                }
             }
             remote.LastWorld = framePos;
             remote.HasLastWorld = true;
 
             if (remote.Animator == null) return;
-            // The crew controller rests seated: "stand" is false until a crew member gets a task.
-            if (remote.HasStand) remote.Animator.SetBool("stand", true);
-            bool walking = remote.Speed > 0.25f;
-            if (remote.HasWalking) remote.Animator.SetBool("walking", walking);
-            if (remote.HasVertical) remote.Animator.SetFloat("vertical", walking ? 0.5f : 0f, 0.15f, dt);
-            if (remote.HasHorizontal) remote.Animator.SetFloat("horizontal", 0f, 0.15f, dt);
+            Animator animator = remote.Animator;
+            bool ladder = (remote.Flags & PlayerFlags.OnLadder) != 0;
+            bool walking = !ladder && remote.Speed > 0.25f;
+            // The controller's kneel is not used for a crouch: it has no walk, and going into it again
+            // at every stop plays a whole sitting down. A crouch is the standing body bent low (Crouch).
+            if (remote.HasStand) animator.SetBool("stand", true);
+            if (remote.HasLadder) animator.SetBool("onladder", ladder);
+            if (remote.HasSpeed) animator.SetFloat("speed", ladder ? (Mathf.Abs(remote.Climb) < 0.1f ? 0f : Mathf.Sign(remote.Climb)) : 1f);
+            if (remote.HasWalking) animator.SetBool("walking", walking);
+
+            Vector2 blend = Vector2.zero;
+            if (walking)
+            {
+                Vector3 frameStep = deck != null ? deck.TransformDirection(remote.Step) : remote.Step;
+                Vector3 local = body.InverseTransformDirection(frameStep);
+                var dir = new Vector2(local.x, local.z);
+                if (dir.sqrMagnitude > 0.0001f)
+                    blend = dir.normalized * ((remote.Flags & PlayerFlags.Sprinting) != 0 ? 1f : 0.5f);
+            }
+            if (remote.HasHorizontal) animator.SetFloat("horizontal", blend.x, 0.15f, dt);
+            if (remote.HasVertical) animator.SetFloat("vertical", blend.y, 0.15f, dt);
+
+            // A crouching player moves slowly: its walk is the walk at a slower pace.
+            bool low = remote.Crouching && !ladder && (remote.Flags & PlayerFlags.Swimming) == 0;
+            remote.Low = Mathf.MoveTowards(remote.Low, low ? 1f : 0f, dt * 4f);
+            animator.speed = low && walking ? Mathf.Clamp(remote.Speed / CrouchWalkPace, 0.4f, 1f) : 1f;
+        }
+
+        // How far the hips go down in a crouching walk, how far the body leans forward, and the
+        // speed, metres a second, at which the walk is played at its own pace.
+        private const float CrouchDrop = 0.55f, CrouchLean = 30f, CrouchWalkPace = 1.4f;
+
+        /// <summary>
+        /// A crouch, which the crew controller has none of: the body as the animator posed it, standing
+        /// or walking, with the hips lowered, the feet kept where the pose puts them and the knees
+        /// bent forward to reach them.
+        /// </summary>
+        private static void Crouch(Remote remote)
+        {
+            if (remote.Legs == null || remote.Low <= 0f) return;
+            Transform body = remote.Avatar.transform;
+            Transform[] legs = remote.Legs;
+            Vector3 leftFoot = legs[4].position, rightFoot = legs[7].position;
+            legs[0].position -= body.up * (CrouchDrop * remote.Low);
+            legs[1].rotation = Quaternion.AngleAxis(CrouchLean * remote.Low, body.right) * legs[1].rotation;
+            Vector3 ahead = body.forward * 0.5f;
+            AvatarIK.Reach(legs[2], legs[3], legs[4], leftFoot, legs[3].position + ahead, true);
+            AvatarIK.Reach(legs[5], legs[6], legs[7], rightFoot, legs[6].position + ahead, true);
+        }
+
+        /// <summary>
+        /// After the animator has posed the body: chest, neck and head bend with the look. The animator
+        /// poses every bone anew each frame, so this does not add up.
+        /// </summary>
+        private static void Look(Remote remote, float pitch)
+        {
+            if (remote.Spine == null || (remote.Flags & PlayerFlags.OnLadder) != 0) return;
+            Vector3 right = remote.Avatar.transform.right;
+            pitch = Mathf.Clamp(pitch, -70f, 70f);
+            for (int i = 0; i < remote.Spine.Length; i++)
+            {
+                Transform bone = remote.Spine[i];
+                if (bone != null) bone.rotation = Quaternion.AngleAxis(pitch * SpineShare[i], right) * bone.rotation;
+            }
+        }
+
+        // The wrist is this far short of where the hand grips.
+        private const float WristToGrip = 0.07f;
+
+        /// <summary>
+        /// The hands of every avatar on what it holds: a carried thing in both, held at its sides, or
+        /// the tool it has out. After the things are drawn (<see cref="ItemRegistry.LateTick"/>): a
+        /// carried thing's pose of this frame is known only then.
+        /// </summary>
+        public void PoseHands(ItemRegistry items)
+        {
+            float dt = Time.unscaledDeltaTime;
+            foreach (Remote remote in _remotes.Values)
+            {
+                if (remote.Avatar == null || !remote.Avatar.activeSelf || remote.Arms == null) continue;
+                Transform body = remote.Avatar.transform;
+                bool right = false, left = false, tool = false;
+                Vector3 r = default, l = default;
+                // The climb moves the arms itself.
+                if ((remote.Flags & PlayerFlags.OnLadder) == 0)
+                {
+                    Transform held = items != null ? items.HeldBy(remote.NetId) : null;
+                    if (held != null && AvatarIK.Bounds(held.gameObject, out Bounds box))
+                    {
+                        float half = AvatarIK.Reach(box, body.right) + WristToGrip;
+                        r = box.center + body.right * half;
+                        l = box.center - body.right * half;
+                        right = left = true;
+                    }
+                    else if (remote.Tools.Grips(out r, out l, out bool both))
+                    {
+                        right = tool = true; left = both;
+                    }
+                }
+                remote.RightHold = Mathf.MoveTowards(remote.RightHold, right ? 1f : 0f, dt * 5f);
+                remote.LeftHold = Mathf.MoveTowards(remote.LeftHold, left ? 1f : 0f, dt * 5f);
+                if (right) remote.RightAt = tool ? Wrist(r, remote.Arms[3]) : r;
+                Hold(remote.Arms[3], remote.Arms[4], remote.Arms[5], remote.Fingers[1], remote.RightAt, remote.RightHold, body, 1f);
+                // The tool goes into the right hand where the arm could take it, then the left takes
+                // it there. One held to the eye stays at the eye.
+                if (tool && !remote.Tools.AtEye && remote.RightHold >= 1f)
+                {
+                    Transform hand = remote.Arms[5];
+                    Vector3 palm = hand.position + (hand.position - remote.Arms[4].position).normalized * WristToGrip;
+                    remote.Tools.Shift(Vector3.ClampMagnitude(palm - r, 0.15f));
+                    remote.Tools.Grips(out _, out l, out _);
+                }
+                if (left) remote.LeftAt = tool ? Wrist(l, remote.Arms[0]) : l;
+                Hold(remote.Arms[0], remote.Arms[1], remote.Arms[2], remote.Fingers[0], remote.LeftAt, remote.LeftHold, body, -1f);
+            }
+        }
+
+        // The wrist for a hand that closes on a point: the palm goes on past the wrist, along the arm.
+        private static Vector3 Wrist(Vector3 grip, Transform shoulder) =>
+            grip - (grip - shoulder.position).normalized * WristToGrip;
+
+        private static void Hold(Transform upper, Transform lower, Transform hand, Transform finger, Vector3 at, float weight, Transform body, float side)
+        {
+            if (weight <= 0f) return;
+            // The elbow down, out to its side and a little back.
+            Vector3 elbow = upper.position - body.up * 0.4f + body.right * (side * 0.25f) - body.forward * 0.1f;
+            AvatarIK.Reach(upper, lower, hand, Vector3.Lerp(hand.position, at, weight), elbow, false);
+            // A hand at rest hangs from the wrist; one that holds something is in line with the forearm.
+            if (finger == null) return;
+            Quaternion straight = Quaternion.FromToRotation(finger.position - hand.position, hand.position - lower.position);
+            hand.rotation = Quaternion.Slerp(Quaternion.identity, straight, weight) * hand.rotation;
         }
 
         public void Remove(uint netId)

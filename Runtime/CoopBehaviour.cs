@@ -597,6 +597,7 @@ namespace FollowingSeasCoop.Runtime
                     Items.LateTick();
                     Crew.LateTick();
                 }
+                Players.PoseHands(Participating ? Items : null);
             }
             catch (Exception e)
             {

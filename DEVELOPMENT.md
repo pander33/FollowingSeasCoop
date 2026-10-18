@@ -103,7 +103,7 @@ so it lines up on every copy whatever that copy's origin is.
 |---|---|
 | Session | Handshake with protocol check, roster, clock sync, up to `Network/MaxClients` guests. |
 | World | The host captures the game's save object with no file, sends it gzip-packed in chunks; the guest gives it to the game's loader. The host is paused while a guest loads. A guest never writes a save. |
-| Players | Pose 20 times a second, hull-local aboard, real space elsewhere; avatars are the game's crew models. |
+| Players | Pose 20 times a second, hull-local aboard, real space elsewhere; avatars are the game's crew models, animated from how they move, bent low in a crouch, holding what the player holds. |
 | Ship | The host sends the hull's pose and velocities; a guest's hull is kinematic and follows the buffered poses. A guest's fast travel by the chart is sent to the host, which moves its hull there; after a jump that long every copy moves its origin and reloads the islands. |
 | Sea and sky | Weather type, wind, wave spectrum, ocean clock, date and time, four times a second. |
 | Controls | Wheel, reefs, rig ropes, winches, doors, lanterns, ballast, kedge anchor, mooring lines, pump — as state, not input. One hand at a time on what is held for a while. |
@@ -170,3 +170,4 @@ wire protocol did.
 | 2026-10-18 | 17 | The journal's world pages (notes read, places found) are shared; a guest whose world was loaded again gets the journal lines written since it joined. |
 | 2026-10-18 | 17 | The fish sale dialog keeps fish another player put in or sold while it was open. |
 | 2026-10-18 | 18 | A fish taken off a hook by two players at once goes to one of them; two players mending one leak at once both count; changes of a contract end the same on every copy. |
+| 2026-10-18 | 19 | Another player's body: walking and running in every direction, crouching, climbing a ladder, the head following the look; a tool or a carried thing in its hands. |

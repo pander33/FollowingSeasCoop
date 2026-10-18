@@ -219,6 +219,15 @@ namespace FollowingSeasCoop.Sync
             return 0;
         }
 
+        /// <summary>The thing another player holds, as this copy draws it; null when it holds none.</summary>
+        internal Transform HeldBy(uint player)
+        {
+            foreach (Entry entry in _ids.Values)
+                if (entry.Record.Status == ItemStatus.Held && entry.Record.Holder == player && entry.Object != null)
+                    return entry.Object.transform;
+            return null;
+        }
+
         // The hand itself counts before the host has answered: the game has already put the thing there.
         private bool Leads(ItemRecord r, ObjectInteractionHandler item) => item.isHeld || Mover(r) == _net.MyNetId;
 

@@ -346,6 +346,8 @@ namespace FollowingSeasCoop.Net
         Swimming = 4,
         /// <summary>The pose is in the frame of the launched rowboat.</summary>
         OnRowboat = 8,
+        OnLadder = 16,
+        Sprinting = 32,
     }
 
     /// <summary>
