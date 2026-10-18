@@ -33,6 +33,7 @@ namespace FollowingSeasCoop.Runtime
                 case MsgType.CrewRoster: return "Crew";
                 case MsgType.ShipPlans:
                 case MsgType.ShipLaunch: return "Shipyard";
+                case MsgType.MapChange: return "Chart";
                 default: return null;
             }
         }
@@ -84,13 +85,14 @@ namespace FollowingSeasCoop.Runtime
                     break;
                 case EconomyStateMsg m:
                     key = "counted up to " + m.Acked;
-                    value = "money " + F(m.Money) + (m.HasStores ? "  stores " + Stores(m.Stores) : "  no ship") +
+                    value = "money " + F(m.Money) + (m.HasStores ? "  stores " + Stores(m.Stores) : "  no ship") + "  ashore " + Stores(m.Shore) +
                             (m.HasFish ? "  fish " + m.Fish : "") + "  debts " + m.Debts.Length;
                     break;
                 case EconomyDeltaMsg m:
                     key = "difference " + m.Seq;
                     value = m.Resync ? "asks for everything again"
-                          : "money " + F(m.Money) + "  stores " + Stores(m.Stores) + "  fish " + m.Fish + (m.HasDebts ? "  debts " + m.Debts.Length : "");
+                          : "money " + F(m.Money) + "  stores " + Stores(m.Stores) + "  ashore " + Stores(m.Shore) + "  fish " + m.Fish +
+                            (m.Debts.Length > 0 ? "  debts " + string.Join(" ", m.Debts) : "");
                     break;
                 case TaskStateMsg m:
                     key = m.Kind + " " + m.Id;
@@ -111,6 +113,10 @@ namespace FollowingSeasCoop.Runtime
                 case ShipPlansMsg m:
                     key = "plans";
                     value = string.Join(" ", m.Lines);
+                    break;
+                case MapChangeMsg m:
+                    key = m.Full ? "whole chart" : "change";
+                    value = "courses +" + m.AddPlots.Length + " -" + m.RemovePlots.Length + "  markers +" + m.AddMarkers.Length + " -" + m.RemoveMarkers.Length;
                     break;
                 case ShipLaunchMsg m:
                     key = m.Ship;

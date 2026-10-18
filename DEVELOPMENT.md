@@ -109,13 +109,14 @@ so it lines up on every copy whatever that copy's origin is.
 | Controls | Wheel, reefs, rig ropes, winches, doors, lanterns, ballast, kedge anchor, mooring lines, pump — as state, not input. One hand at a time on what is held for a while. |
 | Things | Barrels and sacks: a registry keyed by scene path; one mover at a time sends poses, the others draw it from a buffer; stand-ins where a copy lacks the object. |
 | Tools in hand | The active inventory slot and hammer blows; shown as a renderer-only copy of the local tool, the lantern with its light and flame. |
-| Household | Money, stores, debts, journal: polled, sent as numbered differences, the host's numbers win. |
+| Household | Money, stores aboard and ashore, debts, journal: polled, sent as numbered differences (debts per creditor), the host's numbers win. A trade or transfer dialog applies what the player chose to the stores as they are when it is confirmed, not as they were when it opened. |
+| Chart | Courses and markers travel as the game's own lines, which went and which came; a closed chart rebuilds itself from them when it next opens. |
 | Contracts | Travel as the game's own save strings; the reward is counted on the delivering copy only. |
 | Cargo | A crate is named by its box and its half-metre cell; one player at a time at the panel. |
 | Leaks, trolling lines, fish hold, catch records | More control kinds and one more store; only the host rolls for leaks and bites. |
 | Hunting | A shot animal and its harvest are told to all; living animals are each copy's own. |
 | Rowboat | Launching is a control; in the water it is moved by the copy of the player in it. |
-| Shipyard | The ship plans and what was paid or delivered for them are polled and sent line by line. A launch runs the game's own code on the launching copy; the others load the same ship scene and put the hull at the same point, a guest's launch through the host. |
+| Shipyard | The ship plans and what was paid or delivered for them are polled and sent line by line; the host adds a guest's change to its own figures. A payment counts from the purse as it is when it is made. A launch runs the game's own code on the launching copy; the others load the same ship scene and put the hull at the same point, a guest's launch through the host. |
 | Crew | A guest's orders are carried out by the host's crew; the looks and the roster are sent to guests. |
 | Player menu | A Co-op button and page made of copies of the game's own buttons; LAN list of hosted games. |
 | Steam | A host is also reachable by its Steam id: Steam P2P datagrams tunnelled to LiteNetLib through loopback. Rich presence lists hosting friends in the join dialog and gives Steam's own Join Game and invites. Friends-only admission. |
@@ -165,3 +166,4 @@ wire protocol did.
 | 2026-10-17 | 13 | `ModChannel` for Omens: addressed channels (`RegisterPeer`, `Members`, `SessionIdentity`) and a number carried with a trolled fish. |
 | 2026-10-17 | 14 | The lantern in another player's hand gives light; a guest's fast travel by the chart moves the host's ship. |
 | 2026-10-17 | 15 | The shipyard: shared ship plans and payments; a ship launched by anyone is everybody's. The hull's pose names its ship. |
+| 2026-10-17 | 16 | Audit fixes: the store ashore, debts as differences, trade and payment dialogs opened before another player's change, shipyard payments made at once, the chart's courses and markers, a barrel bought by two hands at once, late packets of players, the rowboat and things, a refused hand on a control. |

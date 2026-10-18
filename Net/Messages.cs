@@ -44,6 +44,7 @@ namespace FollowingSeasCoop.Net
         FastTravel = 34,
         ShipPlans = 35,
         ShipLaunch = 36,
+        MapChange = 37,
     }
 
     public interface INetMessage

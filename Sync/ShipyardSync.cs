@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
 using FollowingSeasCoop.Net;
 using FollowingSeasCoop.Runtime;
@@ -17,8 +18,10 @@ namespace FollowingSeasCoop.Sync
     ///
     /// The plans are <c>GameData.shipPlansKnown</c>, one line per kind of ship, which the shipyard's
     /// dialogs write directly. Twice a second each copy compares the lines with what it last knew and
-    /// sends the changed ones; the receiver replaces its line of that kind. The money goes through
-    /// <see cref="EconomySync"/>.
+    /// sends the changed ones. A guest sends each with the line it was before: the host adds what
+    /// the guest paid and delivered to its own figures, so two players paying at once both count,
+    /// and tells everybody the result. The money goes through <see cref="EconomySync"/>; a payment
+    /// dialog counts from the purse and the plan as they are when it pays, not when it opened.
     ///
     /// A launch runs the game's own code on the copy of the player who pressed it: the old hull is
     /// stored (switched off), the new one is loaded from its scene and put at the launch point. That
@@ -46,6 +49,12 @@ namespace FollowingSeasCoop.Sync
         private static readonly MethodInfo BuildFieldsMethod = AccessTools.Method(typeof(ShipMarketUI), "UpdateBuildFields");
         private static readonly MethodInfo BuyFieldsMethod = AccessTools.Method(typeof(ShipMarketUI), "UpdateBuyFields");
         private static readonly FieldInfo PlayerShipField = AccessTools.Field(typeof(PlayerHandler), "currentShipID");
+        private static readonly FieldInfo PayCostField = AccessTools.Field(typeof(GivePaymentHandler), "cost");
+        private static readonly FieldInfo PayPaidField = AccessTools.Field(typeof(GivePaymentHandler), "paid");
+        private static readonly FieldInfo PayMoneyField = AccessTools.Field(typeof(GivePaymentHandler), "money");
+        private static readonly FieldInfo PaySliderField = AccessTools.Field(typeof(GivePaymentHandler), "moneySlider");
+        // Fields of a plan line after the kind: three flags, then paid, wood, linen, iron.
+        private const int PlanFlags = 3;
 
         private readonly CoopNet _net;
         private readonly Dictionary<string, string> _plans = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -117,18 +126,23 @@ namespace FollowingSeasCoop.Sync
         // The lines the local game changed since the last look, sent when asked.
         private void Look(DataPersistenceManager dp, bool send)
         {
-            List<string> changed = null;
+            List<string> changed = null, bases = null;
             foreach (string line in dp.gameData.shipPlansKnown)
             {
                 string kind = Kind(line);
                 if (kind == null || (_plans.TryGetValue(kind, out string known) && known == line)) continue;
-                _plans[kind] = line;
                 (changed ?? (changed = new List<string>())).Add(line);
+                (bases ?? (bases = new List<string>())).Add(known ?? "");
+                _plans[kind] = line;
             }
             if (!send || changed == null) return;
             var msg = new ShipPlansMsg { Lines = changed.ToArray() };
             if (_net.IsHost) _net.Broadcast(msg, DeliveryMethod.ReliableOrdered);
-            else _net.SendToHost(msg, DeliveryMethod.ReliableOrdered);
+            else
+            {
+                msg.Bases = bases.ToArray();
+                _net.SendToHost(msg, DeliveryMethod.ReliableOrdered);
+            }
             CoopTrace.Note("Shipyard", "plans", "sent", string.Join(" ", changed));
         }
 
@@ -140,19 +154,43 @@ namespace FollowingSeasCoop.Sync
             List<string> plans = dp.gameData.shipPlansKnown;
             if (dp == _dp) Look(dp, true);
 
-            foreach (string line in msg.Lines)
+            var result = new List<string>();
+            for (int i = 0; i < msg.Lines.Length; i++)
             {
+                string line = msg.Lines[i];
                 string kind = Kind(line);
                 if (kind == null) continue;
                 int index = plans.FindIndex(known => Kind(known) == kind);
+                string before = i < msg.Bases.Length ? msg.Bases[i] : "";
+                if (_net.IsHost && index >= 0 && before.Length > 0) line = Merge(plans[index], before, line);
                 if (index >= 0) plans[index] = line; else plans.Add(line);
                 if (dp == _dp) _plans[kind] = line;
                 Refresh(kind, line);
+                result.Add(line);
             }
-            // To the sender too: a line the host changed meanwhile went the other way, and every copy
-            // must end on the one the host now has.
-            if (_net.IsHost) _net.Broadcast(msg, DeliveryMethod.ReliableOrdered);
+            // To the sender too: its line is now the host's figures plus its change.
+            if (_net.IsHost && result.Count > 0)
+                _net.Broadcast(new ShipPlansMsg { Lines = result.ToArray() }, DeliveryMethod.ReliableOrdered);
         }
+
+        // The guest's change from its old line, put on the host's line: a flag the guest switched is
+        // the guest's, a figure grows by what the guest added.
+        private static string Merge(string host, string before, string after)
+        {
+            string[] h = host.Split('='), b = before.Split('='), a = after.Split('=');
+            if (h.Length != a.Length || b.Length != a.Length) return after;
+            for (int i = 1; i < a.Length; i++)
+            {
+                if (i <= PlanFlags) { if (a[i] != b[i]) h[i] = a[i]; continue; }
+                if (TryNumber(h[i], out float hv) && TryNumber(b[i], out float bv) && TryNumber(a[i], out float av))
+                    h[i] = (hv + av - bv).ToString(CultureInfo.InvariantCulture);
+                else h[i] = a[i];
+            }
+            return string.Join("=", h);
+        }
+
+        private static bool TryNumber(string text, out float value) =>
+            float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
 
         // A shipyard dialog that is open keeps the line it read when it opened, and writes it back
         // with the next payment.
@@ -377,9 +415,40 @@ namespace FollowingSeasCoop.Sync
         public static void Install(Harmony harmony)
         {
             if (IdField == null || SpawnField == null) throw new MissingFieldException(nameof(ShipMarketUI), "id / shipToSpawn");
+            if (PayCostField == null || PayPaidField == null || PayMoneyField == null || PaySliderField == null)
+                throw new MissingFieldException(nameof(GivePaymentHandler), "cost / paid / money / moneySlider");
+            harmony.Patch(AccessTools.Method(typeof(GivePaymentHandler), "Pay")
+                              ?? throw new MissingMethodException(nameof(GivePaymentHandler), "Pay"),
+                          prefix: new HarmonyMethod(typeof(ShipyardSync), nameof(PayPrefix)));
             harmony.Patch(AccessTools.Method(typeof(ShipMarketUI), "LaunchShip")
                               ?? throw new MissingMethodException(nameof(ShipMarketUI), "LaunchShip"),
                           postfix: new HarmonyMethod(typeof(ShipyardSync), nameof(LaunchPostfix)));
+        }
+
+        // The payment dialog sets the purse to what it held when the dialog opened, less the payment,
+        // and the plan to what was paid then, plus it. Another player's spending or paying meanwhile
+        // would be undone; so it pays from the purse and the plan as they are now.
+        private static void PayPrefix(GivePaymentHandler __instance)
+        {
+            PatchGuard.Run(() =>
+            {
+                DataPersistenceManager dp = GameAccess.Dp;
+                ShipMarketUI ui = __instance.transform.parent != null ? __instance.transform.parent.GetComponent<ShipMarketUI>() : null;
+                if (dp == null || dp.gameData == null || ui == null) return;
+                float paid = (float)PayPaidField.GetValue(__instance);
+                string kind = IdField.GetValue(ui) as string;
+                string line = dp.gameData.shipPlansKnown?.Find(known => Kind(known) == kind);
+                string[] fields = line != null ? line.Split('=') : null;
+                if (fields != null && fields.Length > PlanFlags + 1 && TryNumber(fields[PlanFlags + 1], out float now)) paid = now;
+                float money = dp.gameData.tearCount;
+                PayPaidField.SetValue(__instance, paid);
+                PayMoneyField.SetValue(__instance, money);
+                if (PaySliderField.GetValue(__instance) is UnityEngine.UI.Slider slider)
+                {
+                    float most = Mathf.Max(0f, Mathf.Min(money, (float)PayCostField.GetValue(__instance) - paid));
+                    if (slider.value > most) slider.SetValueWithoutNotify(most);
+                }
+            }, error => Plugin.Log.LogError("[Shipyard] " + error));
         }
 
         private static void LaunchPostfix(ShipMarketUI __instance)

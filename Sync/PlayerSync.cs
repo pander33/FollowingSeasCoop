@@ -172,6 +172,8 @@ namespace FollowingSeasCoop.Sync
             }
             byte frame = (msg.Flags & PlayerFlags.OnShip) != 0 ? FrameShip
                 : (msg.Flags & PlayerFlags.OnRowboat) != 0 ? FrameRowboat : FrameReal;
+            // ToolTick is the newest tick taken: a late pose of the frame before must not clear the new one's.
+            if (remote.HasFrame && remote.Frame != frame && msg.Tick < remote.ToolTick) return;
             if (!remote.HasFrame || remote.Frame != frame)
             {
                 // Positions of two frames cannot be interpolated.

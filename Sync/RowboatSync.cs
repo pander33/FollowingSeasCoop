@@ -48,6 +48,8 @@ namespace FollowingSeasCoop.Sync
         private float _guestHeardAt = -100f;
         // Guest: what the host last said about whose boat it is.
         private uint _statedDriver;
+        // The newest host tick the stated driver came with: a late packet must not bring an old driver back.
+        private long _statedTick;
         private bool _statedHeld;
         private float _statedAt = -100f;
         private bool _remoteRowing;
@@ -96,6 +98,7 @@ namespace FollowingSeasCoop.Sync
             _buf.Clear();
             _guestDriver = 0;
             _statedDriver = 0;
+            _statedTick = 0;
             _statedHeld = false;
         }
 
@@ -211,8 +214,13 @@ namespace FollowingSeasCoop.Sync
             }
             else
             {
-                if (_statedDriver != msg.Driver) _buf.Clear();
+                if (_statedDriver != msg.Driver)
+                {
+                    if (msg.Tick < _statedTick) return;
+                    _buf.Clear();
+                }
                 _statedDriver = msg.Driver;
+                if (msg.Tick > _statedTick) _statedTick = msg.Tick;
                 _statedHeld = (msg.Flags & RowboatFlags.Held) != 0;
                 _statedAt = now;
                 if (msg.Driver == _net.MyNetId) return;
@@ -305,6 +313,7 @@ namespace FollowingSeasCoop.Sync
             _buf.Clear();
             _guestDriver = 0;
             _statedDriver = 0;
+            _statedTick = 0;
             _statedHeld = false;
             _remoteRowing = false;
             Driving = false;

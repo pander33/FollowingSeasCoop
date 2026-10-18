@@ -60,6 +60,9 @@ namespace FollowingSeasCoop.Sync
         private float _loadStartedAt;
         private float _inWorldSince = -1f;
         private bool _leaveIssued;
+        // A failed return to the title screen is tried again a few times, not left half done.
+        private int _leaveTries;
+        private float _leaveRetryAt;
 
         public GuestWorldState State { get; private set; } = GuestWorldState.None;
         public string LastError { get; private set; } = "";
@@ -183,6 +186,8 @@ namespace FollowingSeasCoop.Sync
             _loadStartedAt = Time.realtimeSinceStartup;
             _inWorldSince = -1f;
             _leaveIssued = false;
+            _leaveTries = 0;
+            _leaveRetryAt = 0f;
             State = GuestWorldState.Loading;
             try
             {
@@ -256,9 +261,18 @@ namespace FollowingSeasCoop.Sync
                 }
                 return;
             }
+            if (Time.realtimeSinceStartup < _leaveRetryAt) return;
             _leaveIssued = true;
             try { GameAccess.ReturnToMainMenu(); }
-            catch (Exception e) { _log("[World] Return to the title screen failed: " + e); }
+            catch (Exception e)
+            {
+                Plugin.Log.LogWarning("[World] Return to the title screen failed: " + e);
+                if (++_leaveTries < 3)
+                {
+                    _leaveIssued = false;
+                    _leaveRetryAt = Time.realtimeSinceStartup + 2f;
+                }
+            }
         }
 
         /// <summary>Guest: the session is over (link lost, kicked, or the player pressed Disconnect).</summary>

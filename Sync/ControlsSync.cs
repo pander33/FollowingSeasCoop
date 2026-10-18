@@ -405,8 +405,10 @@ namespace FollowingSeasCoop.Sync
             slot.Pending = new Reading { A = msg.A, B = msg.B, C = msg.C, Text = msg.Text ?? "" };
             slot.HasPending = true;
             slot.Tries = 0;
-            // What is in the local hand stays the local player's until it is let go.
-            if (now - slot.HeldAt < HoldGrace)
+            // What is in the local hand stays the local player's until it is let go — unless the host
+            // has given it to another hand: then the local hand moves it for nobody, and it shows so.
+            bool another = msg.Holder != 0 && msg.Holder != _net.MyNetId && Leased(msg.Kind);
+            if (now - slot.HeldAt < HoldGrace && !(another && _net.IsClient))
             {
                 if (Traced(slot.Kind)) CoopTrace.Note("Controls", "waits", Name(slot), "in the local hand");
                 return;

@@ -42,7 +42,8 @@ namespace FollowingSeasCoop.Net
     }
 
     /// <summary>
-    /// Host → one guest: the household as the host has it — money, the ship's stores, debts — and
+    /// Host → one guest: the household as the host has it — money, the ship's stores, the stores
+    /// ashore (<c>GameData.storedProvisions</c>), debts — and
     /// the number of the last change of this guest that is already in it.
     /// </summary>
     public sealed class EconomyStateMsg : INetMessage
@@ -53,6 +54,8 @@ namespace FollowingSeasCoop.Net
         /// <summary>False while the host has no ship to read the stores from.</summary>
         public bool HasStores;
         public float[] Stores = new float[EconomyWire.Stores];
+        public float[] Shore = new float[EconomyWire.Stores];
+        /// <summary>The game's debt lines, "creditor=amount".</summary>
         public string[] Debts = Array.Empty<string>();
         /// <summary>Fish in the ship's fish hold; false while the host's ship has none.</summary>
         public bool HasFish;
@@ -61,21 +64,22 @@ namespace FollowingSeasCoop.Net
         public void Serialize(NetDataWriter w)
         {
             w.Put(Acked); w.Put(Money); w.Put(HasStores);
-            EconomyWire.Put(w, Stores); EconomyWire.Put(w, Debts);
+            EconomyWire.Put(w, Stores); EconomyWire.Put(w, Shore); EconomyWire.Put(w, Debts);
             w.Put(HasFish); w.Put(Fish);
         }
 
         public void Deserialize(NetDataReader r)
         {
             Acked = r.GetUInt(); Money = r.GetFloat(); HasStores = r.GetBool();
-            Stores = EconomyWire.GetStores(r); Debts = EconomyWire.GetLines(r);
+            Stores = EconomyWire.GetStores(r); Shore = EconomyWire.GetStores(r); Debts = EconomyWire.GetLines(r);
             HasFish = r.GetBool(); Fish = r.GetInt();
         }
     }
 
     /// <summary>
     /// Guest → host: what the guest's own game changed in the household since its last report —
-    /// by how much the money and each store moved, and the debts as they now stand.
+    /// by how much the money, each store aboard and ashore and each debt moved. Differences, not
+    /// figures: two players' changes made at once both count.
     /// </summary>
     public sealed class EconomyDeltaMsg : INetMessage
     {
@@ -83,7 +87,8 @@ namespace FollowingSeasCoop.Net
         public uint Seq;
         public float Money;
         public float[] Stores = new float[EconomyWire.Stores];
-        public bool HasDebts;
+        public float[] Shore = new float[EconomyWire.Stores];
+        /// <summary>"creditor=change" for each debt that changed.</summary>
         public string[] Debts = Array.Empty<string>();
         /// <summary>The guest's world was loaded again from the copy it joined with: it asks for everything anew.</summary>
         public bool Resync;
@@ -92,14 +97,14 @@ namespace FollowingSeasCoop.Net
 
         public void Serialize(NetDataWriter w)
         {
-            w.Put(Seq); w.Put(Money); EconomyWire.Put(w, Stores);
-            w.Put(HasDebts); EconomyWire.Put(w, Debts); w.Put(Resync); w.Put(Fish);
+            w.Put(Seq); w.Put(Money); EconomyWire.Put(w, Stores); EconomyWire.Put(w, Shore);
+            EconomyWire.Put(w, Debts); w.Put(Resync); w.Put(Fish);
         }
 
         public void Deserialize(NetDataReader r)
         {
-            Seq = r.GetUInt(); Money = r.GetFloat(); Stores = EconomyWire.GetStores(r);
-            HasDebts = r.GetBool(); Debts = EconomyWire.GetLines(r); Resync = r.GetBool(); Fish = r.GetInt();
+            Seq = r.GetUInt(); Money = r.GetFloat(); Stores = EconomyWire.GetStores(r); Shore = EconomyWire.GetStores(r);
+            Debts = EconomyWire.GetLines(r); Resync = r.GetBool(); Fish = r.GetInt();
         }
     }
 

@@ -261,6 +261,8 @@ namespace FollowingSeasCoop.Sync
                 else
                 {
                     _inHand.Remove(item);
+                    // Only the hand that paid can be refunded: a later hand on it bought nothing.
+                    s_bought.Remove(item);
                     if (r != null && r.Status == ItemStatus.Deleted) continue;
                     if (r != null && !_net.IsHost)
                     {
@@ -293,9 +295,25 @@ namespace FollowingSeasCoop.Sync
             else _net.SendToHost(msg, DeliveryMethod.ReliableOrdered);
         }
 
+        private struct Bought { public float At, Cost; }
+        private const float RefundWithin = 10f;
+        // Things this copy's hand paid for just now, until the host's answer.
+        private static readonly Dictionary<ObjectInteractionHandler, Bought> s_bought = new Dictionary<ObjectInteractionHandler, Bought>();
+
         // Another player had it first: the local hand is opened again.
         private void Refuse(ObjectInteractionHandler item, uint holder)
         {
+            // Bought by both hands at once: the one whose hand the host kept has paid.
+            if (s_bought.TryGetValue(item, out Bought bought))
+            {
+                s_bought.Remove(item);
+                DataPersistenceManager dp = GameAccess.Dp;
+                if (dp != null && dp.gameData != null && Time.unscaledTime - bought.At < RefundWithin)
+                {
+                    dp.gameData.tearCount += bought.Cost;
+                    CoopTrace.Note("Items", "refunded", item.name, bought.Cost.ToString("F0"));
+                }
+            }
             item.Hold(false);
             if (item.uiPrompt != null && item.uiPrompt.activeSelf) item.uiPrompt.SetActive(false);
             InteractionController controller = InteractionController.interactionInstance;
@@ -625,13 +643,16 @@ namespace FollowingSeasCoop.Sync
                 if (norm < 0.5f || norm > 1.5f || float.IsNaN(norm)) continue;
                 entry.Track.Push(msg.Tick, e, rot.normalized);
                 if (!_net.IsHost) continue;
-
-                ShipHullMover ship = GameAccess.ActiveShip();
-                r.Pose = new ItemPose
+                // The record is what a release falls back on: never a pose older than the one it has.
+                if (r.Pose == null || msg.Tick >= r.Pose.Tick)
                 {
-                    ShipId = e.Aboard ? (ship != null ? ShipName(ship) : "ship") : "", Tick = msg.Tick,
-                    X = e.X, Y = e.Y, Z = e.Z, Qx = e.Qx, Qy = e.Qy, Qz = e.Qz, Qw = e.Qw,
-                };
+                    ShipHullMover ship = GameAccess.ActiveShip();
+                    r.Pose = new ItemPose
+                    {
+                        ShipId = e.Aboard ? (ship != null ? ShipName(ship) : "ship") : "", Tick = msg.Tick,
+                        X = e.X, Y = e.Y, Z = e.Z, Qx = e.Qx, Qy = e.Qy, Qz = e.Qz, Qw = e.Qw,
+                    };
+                }
                 (relay ?? (relay = new List<ItemMotionEntry>())).Add(e);
             }
             if (relay != null)
@@ -833,6 +854,27 @@ namespace FollowingSeasCoop.Sync
             harmony.Patch(Method("ProcessHold"), prefix: new HarmonyMethod(typeof(ItemRegistry), nameof(HoldPrefix)));
             harmony.Patch(Method("OnTriggerEnter"), prefix: new HarmonyMethod(typeof(ItemRegistry), nameof(TriggerPrefix)));
             harmony.Patch(Method("OnCollisionEnter"), prefix: new HarmonyMethod(typeof(ItemRegistry), nameof(CollisionPrefix)));
+            harmony.Patch(Method("Purchase"), prefix: new HarmonyMethod(typeof(ItemRegistry), nameof(PurchasePrefix)),
+                          postfix: new HarmonyMethod(typeof(ItemRegistry), nameof(PurchasePostfix)));
+        }
+
+        // The game takes the price when the hand closes, before the host has said whose the thing is.
+        private static void PurchasePrefix(ObjectInteractionHandler __instance, out bool __state)
+        {
+            bool before = true;
+            PatchGuard.Run(() => before = (bool)PurchasedField.GetValue(__instance), PatchError);
+            __state = before;
+        }
+
+        private static void PurchasePostfix(ObjectInteractionHandler __instance, bool __state)
+        {
+            PatchGuard.Run(() =>
+            {
+                if (__state || !(bool)PurchasedField.GetValue(__instance)) return;
+                foreach (ObjectInteractionHandler old in s_bought.Where(p => p.Key == null || Time.unscaledTime - p.Value.At > RefundWithin).Select(p => p.Key).ToArray())
+                    s_bought.Remove(old);
+                s_bought[__instance] = new Bought { At = Time.unscaledTime, Cost = __instance.cost };
+            }, PatchError);
         }
 
         private static MethodInfo Method(string name) =>

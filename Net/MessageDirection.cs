@@ -33,6 +33,7 @@ namespace FollowingSeasCoop.Net
                 case MsgType.FastTravel:
                 case MsgType.ShipPlans:
                 case MsgType.ShipLaunch:
+                case MsgType.MapChange:
                     return true;
                 default:
                     return false;
@@ -73,6 +74,7 @@ namespace FollowingSeasCoop.Net
                 case MsgType.ModData:
                 case MsgType.ShipPlans:
                 case MsgType.ShipLaunch:
+                case MsgType.MapChange:
                     return true;
                 default:
                     return false;

@@ -6,20 +6,28 @@ namespace FollowingSeasCoop.Net
 {
     /// <summary>
     /// The game's list of ship plans (<c>GameData.shipPlansKnown</c>): one line per kind of ship,
-    /// "id=plan known=bought=building=paid=wood=linen=iron". Both directions; a receiver replaces
-    /// its line of each kind and adds the kinds it lacks.
+    /// "id=plan known=bought=building=paid=wood=linen=iron". Host → clients: the lines as they are; a
+    /// receiver replaces its line of each kind and adds the kinds it lacks. Client → host: the lines
+    /// the client's game changed, each with the line it changed it from, so the host adds what was
+    /// paid and delivered to its own figures rather than taking the client's.
     /// </summary>
     public sealed class ShipPlansMsg : INetMessage
     {
         public const int MaxLines = 32, MaxLine = 96;
         public MsgType Type => MsgType.ShipPlans;
         public string[] Lines = Array.Empty<string>();
+        /// <summary>Client → host: the line each of <see cref="Lines"/> was before; empty for a new kind.</summary>
+        public string[] Bases = Array.Empty<string>();
 
         public void Serialize(NetDataWriter w)
         {
             int count = Math.Min(Lines?.Length ?? 0, MaxLines);
             w.Put((byte)count);
-            for (int i = 0; i < count; i++) w.Put(Lines[i] ?? "", MaxLine);
+            for (int i = 0; i < count; i++)
+            {
+                w.Put(Lines[i] ?? "", MaxLine);
+                w.Put(Bases != null && i < Bases.Length ? Bases[i] ?? "" : "", MaxLine);
+            }
         }
 
         public void Deserialize(NetDataReader r)
@@ -27,7 +35,12 @@ namespace FollowingSeasCoop.Net
             int count = r.GetByte();
             if (count > MaxLines) throw new InvalidDataException("Too many ship plans");
             Lines = new string[count];
-            for (int i = 0; i < count; i++) Lines[i] = r.GetString(MaxLine);
+            Bases = new string[count];
+            for (int i = 0; i < count; i++)
+            {
+                Lines[i] = r.GetString(MaxLine);
+                Bases[i] = r.GetString(MaxLine);
+            }
         }
     }
 

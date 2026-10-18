@@ -120,8 +120,10 @@ ends for everybody.
 - ☸️ Anyone can steer, reef, work the sheets and braces, drop the kedge anchor, moor, pump, and use
   winches, doors, lanterns and ballast.
 - 🛢️ Barrels and sacks can be carried, put down and thrown by anyone.
-- 💰 One purse and one set of ship's stores: money, provisions, debts, the journal and contracts
-  belong to the whole crew. A delivery by any player pays the common purse.
+- 💰 One purse and one set of stores: money, provisions aboard and in the store ashore, debts, the
+  journal and contracts belong to the whole crew. A delivery by any player pays the common purse.
+- 🗺️ The chart: courses and markers drawn by anyone are on everybody's chart. A change made while
+  your own chart is open shows the next time you open it.
 - 📦 Cargo: anyone can load, move, unload and deliver crates.
 - 🔨 Leaks open and grow for everybody, and anyone can caulk them.
 - 🎣 Fishing with the trolling lines, the fish hold and the catch records.

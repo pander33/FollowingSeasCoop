@@ -254,6 +254,7 @@ namespace FollowingSeasCoop.Runtime
                     Section(d, "Rowboat", () => Rowboat.Dump(d));
                     Section(d, "Crew", () => Crew.Dump(d));
                     Section(d, "Shipyard", () => Shipyard.Dump(d));
+                    Section(d, "Chart", () => Chart.Dump(d));
                 }
                 else d.Info("Session", "world", "none");
 

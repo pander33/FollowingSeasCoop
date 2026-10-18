@@ -11,7 +11,8 @@ namespace FollowingSeasCoop.Sync
 {
     /// <summary>
     /// One household for the crew: money (<c>GameData.tearCount</c>), the ship's seven stores
-    /// (<c>ProvisionsController</c>), debts and the journal. The host's numbers are the truth.
+    /// (<c>ProvisionsController</c>), the same seven ashore (<c>GameData.storedProvisions</c>), debts
+    /// and the journal. The host's numbers are the truth.
     ///
     /// The game writes these from many places — a trade dialog assigns the stores directly, a
     /// payment dialog assigns the money — so nothing is intercepted: four times a second each copy
@@ -23,7 +24,7 @@ namespace FollowingSeasCoop.Sync
     ///
     /// The stores are eaten by the host's clock only: a guest's own timer is switched off.
     /// </summary>
-    internal sealed class EconomySync
+    internal sealed partial class EconomySync
     {
         private const float Period = 0.25f;
         private const float MoneyStep = 0.005f;
@@ -34,7 +35,8 @@ namespace FollowingSeasCoop.Sync
             public uint Seq;
             public float Money;
             public float[] Stores;
-            public bool HasDebts;
+            public float[] Shore;
+            public Dictionary<string, float> Debts;
             public int Fish;
         }
 
@@ -46,7 +48,8 @@ namespace FollowingSeasCoop.Sync
         private float _money;
         private readonly float[] _stores = new float[EconomyWire.Stores];
         private bool _hasStores;
-        private string _debts = "";
+        private readonly float[] _shore = new float[EconomyWire.Stores];
+        private Dictionary<string, float> _debts = new Dictionary<string, float>(StringComparer.Ordinal);
         private int _logs;
         private DataPersistenceManager _dp;
         private float _nextPollAt;
@@ -137,7 +140,95 @@ namespace FollowingSeasCoop.Sync
         private static FishRecordMsg RecordMsg(string id, float weight) =>
             new FishRecordMsg { Line = id + "=" + weight.ToString("R", CultureInfo.InvariantCulture) };
 
-        private static string Join(List<string> lines) => lines == null ? "" : string.Join("\n", lines);
+        // The game's own names in GameData.storedProvisions, in the order of the stores.
+        private static readonly string[] ShoreNames = { "Food", "Drink", "Oakum", "Timber", "Canvas", "Oil", "Aburae" };
+
+        private static bool ParseNumber(string text, out float value) =>
+            float.TryParse(text, out value) ||
+            float.TryParse(text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+
+        private static string Number(float value) => value.ToString(CultureInfo.InvariantCulture);
+
+        // The store ashore: "Food=120" and so on; a store the list does not name is empty.
+        private static void ReadShore(GameData data, float[] shore)
+        {
+            Array.Clear(shore, 0, shore.Length);
+            if (data.storedProvisions == null) return;
+            foreach (string line in data.storedProvisions)
+            {
+                int cut = line == null ? -1 : line.IndexOf('=');
+                if (cut <= 0) continue;
+                int i = Array.IndexOf(ShoreNames, line.Substring(0, cut));
+                if (i >= 0 && ParseNumber(line.Substring(cut + 1), out float value)) shore[i] = value;
+            }
+        }
+
+        private static void WriteShore(GameData data, float[] shore)
+        {
+            var now = new float[EconomyWire.Stores];
+            ReadShore(data, now);
+            bool same = true;
+            for (int i = 0; i < now.Length; i++) same &= Mathf.Abs(now[i] - shore[i]) <= StoreStep;
+            if (same) return;
+            var lines = new List<string>();
+            for (int i = 0; i < ShoreNames.Length; i++) lines.Add(ShoreNames[i] + "=" + Number(shore[i]));
+            data.storedProvisions = lines;
+        }
+
+        // Debts: "creditor=amount", one line per creditor.
+        private static Dictionary<string, float> ReadDebts(IEnumerable<string> lines)
+        {
+            var debts = new Dictionary<string, float>(StringComparer.Ordinal);
+            if (lines == null) return debts;
+            foreach (string line in lines)
+            {
+                int cut = line == null ? -1 : line.LastIndexOf('=');
+                if (cut <= 0 || !ParseNumber(line.Substring(cut + 1), out float amount)) continue;
+                string creditor = line.Substring(0, cut);
+                debts[creditor] = debts.TryGetValue(creditor, out float more) ? more + amount : amount;
+            }
+            return debts;
+        }
+
+        // The game's lines in their order, changed where the amounts differ; a paid debt goes.
+        private static void WriteDebts(GameData data, Dictionary<string, float> debts)
+        {
+            if (data.debts == null) data.debts = new List<string>();
+            Dictionary<string, float> now = ReadDebts(data.debts);
+            bool same = now.Count == debts.Count;
+            foreach (KeyValuePair<string, float> debt in debts)
+                same &= now.TryGetValue(debt.Key, out float amount) && Mathf.Abs(amount - debt.Value) <= MoneyStep;
+            if (same) return;
+            var lines = new List<string>();
+            var written = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string line in data.debts)
+            {
+                int cut = line == null ? -1 : line.LastIndexOf('=');
+                string creditor = cut > 0 ? line.Substring(0, cut) : null;
+                if (creditor == null || !debts.ContainsKey(creditor) || !written.Add(creditor)) continue;
+                lines.Add(creditor + "=" + Number(debts[creditor]));
+            }
+            foreach (KeyValuePair<string, float> debt in debts)
+                if (written.Add(debt.Key)) lines.Add(debt.Key + "=" + Number(debt.Value));
+            data.debts.Clear();
+            data.debts.AddRange(lines);
+        }
+
+        private static void AddDebts(Dictionary<string, float> debts, Dictionary<string, float> change)
+        {
+            foreach (KeyValuePair<string, float> c in change)
+            {
+                float amount = (debts.TryGetValue(c.Key, out float known) ? known : 0f) + c.Value;
+                if (amount > MoneyStep) debts[c.Key] = amount; else debts.Remove(c.Key);
+            }
+        }
+
+        private static string[] DebtLines(Dictionary<string, float> debts)
+        {
+            var lines = new List<string>();
+            foreach (KeyValuePair<string, float> debt in debts) lines.Add(debt.Key + "=" + Number(debt.Value));
+            return lines.ToArray();
+        }
 
         // -----------------------------------------------------------------
         // Loop
@@ -178,7 +269,8 @@ namespace FollowingSeasCoop.Sync
             _hasStores = c != null;
             _controller = c;
             if (c != null) Read(c, _stores);
-            _debts = Join(data.debts);
+            ReadShore(data, _shore);
+            _debts = ReadDebts(data.debts);
             _logs = data.logs != null ? data.logs.Count : 0;
             FishCargoManager hold = FishHold();
             _hasFish = hold != null;
@@ -243,12 +335,29 @@ namespace FollowingSeasCoop.Sync
                 if (fish != _fish) { delta.Fish = fish - _fish; _fish = fish; changed = true; }
             }
 
-            string debts = Join(data.debts);
-            if (debts != _debts)
+            var shore = new float[EconomyWire.Stores];
+            ReadShore(data, shore);
+            for (int i = 0; i < shore.Length; i++)
+                if (Mathf.Abs(shore[i] - _shore[i]) > StoreStep)
+                {
+                    delta.Shore[i] = shore[i] - _shore[i];
+                    _shore[i] = shore[i];
+                    changed = true;
+                }
+
+            Dictionary<string, float> debts = ReadDebts(data.debts);
+            var debtChange = new Dictionary<string, float>(StringComparer.Ordinal);
+            foreach (KeyValuePair<string, float> debt in debts)
+            {
+                float d = debt.Value - (_debts.TryGetValue(debt.Key, out float known) ? known : 0f);
+                if (Mathf.Abs(d) > MoneyStep) debtChange[debt.Key] = d;
+            }
+            foreach (KeyValuePair<string, float> debt in _debts)
+                if (!debts.ContainsKey(debt.Key)) debtChange[debt.Key] = -debt.Value;
+            if (debtChange.Count > 0)
             {
                 _debts = debts;
-                delta.HasDebts = true;
-                delta.Debts = data.debts.ToArray();
+                delta.Debts = DebtLines(debtChange);
                 changed = true;
             }
 
@@ -276,7 +385,7 @@ namespace FollowingSeasCoop.Sync
             if (!changed) return;
             if (_net.IsHost) { SendState(); return; }
             delta.Seq = ++_seq;
-            _pending.Add(new Pending { Seq = delta.Seq, Money = delta.Money, Stores = delta.Stores, HasDebts = delta.HasDebts, Fish = delta.Fish });
+            _pending.Add(new Pending { Seq = delta.Seq, Money = delta.Money, Stores = delta.Stores, Shore = delta.Shore, Debts = debtChange, Fish = delta.Fish });
             _net.SendToHost(delta, DeliveryMethod.ReliableOrdered);
             Sent++;
         }
@@ -290,8 +399,9 @@ namespace FollowingSeasCoop.Sync
             _acked.TryGetValue(player, out uint acked);
             var msg = new EconomyStateMsg { Acked = acked, Money = _money, HasStores = _hasStores };
             Array.Copy(_stores, msg.Stores, _stores.Length);
+            Array.Copy(_shore, msg.Shore, _shore.Length);
             msg.HasFish = _hasFish; msg.Fish = _fish;
-            msg.Debts = _debts.Length == 0 ? Array.Empty<string>() : _debts.Split('\n');
+            msg.Debts = DebtLines(_debts);
             return msg;
         }
 
@@ -352,11 +462,14 @@ namespace FollowingSeasCoop.Sync
                 _fish = Math.Max(0, _fish + msg.Fish);
                 WriteFish(hold, _fish);
             }
-            if (msg.HasDebts)
+            bool shore = false;
+            for (int i = 0; i < _shore.Length; i++)
+                if (msg.Shore[i] != 0f) { _shore[i] = Mathf.Max(0f, _shore[i] + msg.Shore[i]); shore = true; }
+            if (shore) WriteShore(data, _shore);
+            if (msg.Debts.Length > 0)
             {
-                data.debts.Clear();
-                data.debts.AddRange(msg.Debts);
-                _debts = Join(data.debts);
+                AddDebts(_debts, ReadDebts(msg.Debts));
+                WriteDebts(data, _debts);
             }
             _acked[player] = msg.Seq;
             SendState();
@@ -380,13 +493,16 @@ namespace FollowingSeasCoop.Sync
             float money = msg.Money;
             var stores = new float[EconomyWire.Stores];
             Array.Copy(msg.Stores, stores, stores.Length);
-            bool ownDebts = false;
+            var shore = new float[EconomyWire.Stores];
+            Array.Copy(msg.Shore, shore, shore.Length);
+            Dictionary<string, float> debts = ReadDebts(msg.Debts);
             int fish = msg.Fish;
             foreach (Pending p in _pending)
             {
                 money += p.Money;
                 for (int i = 0; i < stores.Length; i++) stores[i] = Mathf.Max(0f, stores[i] + p.Stores[i]);
-                ownDebts |= p.HasDebts;
+                for (int i = 0; i < shore.Length; i++) shore[i] = Mathf.Max(0f, shore[i] + p.Shore[i]);
+                AddDebts(debts, p.Debts);
                 fish = Math.Max(0, fish + p.Fish);
             }
 
@@ -408,12 +524,10 @@ namespace FollowingSeasCoop.Sync
                 WriteFish(hold, fish);
                 _fish = fish; _hasFish = true; _fishHold = hold;
             }
-            if (!ownDebts)
-            {
-                data.debts.Clear();
-                data.debts.AddRange(msg.Debts);
-                _debts = Join(data.debts);
-            }
+            WriteShore(data, shore);
+            Array.Copy(shore, _shore, shore.Length);
+            WriteDebts(data, debts);
+            _debts = debts;
         }
 
         // -----------------------------------------------------------------
@@ -472,6 +586,9 @@ namespace FollowingSeasCoop.Sync
                 for (int i = 0; i < stores.Length; i++) d.Line("Household", "store " + names[i], StateDump.F(stores[i]), 0.05f);
             }
             else d.Line("Household", "stores", "no ship");
+            var shore = new float[EconomyWire.Stores];
+            ReadShore(data, shore);
+            for (int i = 0; i < shore.Length; i++) d.Line("Household", "ashore " + ShoreNames[i].ToLowerInvariant(), StateDump.F(shore[i]), 0.05f);
             FishCargoManager hold = FishHold();
             d.Line("Household", "fish in the hold", hold != null ? hold.currentFishCount.ToString() : "no hold");
             var debts = new List<string>(data.debts ?? new List<string>());

@@ -33,6 +33,7 @@ namespace FollowingSeasCoop.Runtime
         internal RowboatSync Rowboat { get; private set; }
         internal CrewSync Crew { get; private set; }
         internal ShipyardSync Shipyard { get; private set; }
+        internal ChartSync Chart { get; private set; }
 
         private Harmony _harmony;
         /// <summary>What the menu shows about the last thing that happened ("Connected", an error...).</summary>
@@ -71,6 +72,7 @@ namespace FollowingSeasCoop.Runtime
             Rowboat = new RowboatSync(Net, Boats);
             Crew = new CrewSync(Net);
             Shipyard = new ShipyardSync(Net);
+            Chart = new ChartSync(Net);
             SceneManager.sceneUnloaded += Items.WorldUnloaded;
             SceneManager.sceneUnloaded += Hunt.WorldUnloaded;
 
@@ -100,6 +102,7 @@ namespace FollowingSeasCoop.Runtime
             PatchHealth.Install("Tools", () => ToolVisuals.Install(_harmony), log);
             // Without it a guest's own timer would eat from the shared stores a second time.
             PatchHealth.Install("Economy", () => EconomySync.Install(_harmony), log);
+            PatchHealth.Install("Trade dialogs", () => EconomySync.InstallDialogs(_harmony), log);
             // Without it the hold is not shared: two cargo panels at once would lose a task's counts.
             PatchHealth.Install("Cargo", () => CargoSync.Install(_harmony), log);
             // Without it leaks and trolling lines are not shared: a guest's copy would roll its own.
@@ -372,6 +375,7 @@ namespace FollowingSeasCoop.Runtime
             Rowboat.Clear();
             Crew.Clear();
             Shipyard.Clear();
+            Chart.Clear();
             InputBlock.Set(InputBlock.Reason.HostPause, false);
         }
 
@@ -394,6 +398,7 @@ namespace FollowingSeasCoop.Runtime
                     case MsgType.FastTravel: Boats.OnFastTravel((FastTravelMsg)msg, from); break;
                     case MsgType.ShipPlans: Shipyard.OnPlans((ShipPlansMsg)msg, from); break;
                     case MsgType.ShipLaunch: Shipyard.OnLaunch((ShipLaunchMsg)msg, from); break;
+                    case MsgType.MapChange: Chart.OnChange((MapChangeMsg)msg, from); break;
                     case MsgType.EnvState: Env.OnEnvState((EnvStateMsg)msg); break;
                     case MsgType.ControlRequest: Controls.OnRequest((ControlRequestMsg)msg, from); break;
                     case MsgType.ControlState: Controls.OnState((ControlStateMsg)msg); break;
@@ -411,6 +416,7 @@ namespace FollowingSeasCoop.Runtime
                             Hunt.SendAll(Net.PlayerNetIdForPeer(from));
                             Crew.SendRoster(Net.PlayerNetIdForPeer(from));
                             Shipyard.SendAll(Net.PlayerNetIdForPeer(from));
+                            Chart.SendAll(Net.PlayerNetIdForPeer(from));
                             // Its ship is the one of the save again: every control as it stands now.
                             Controls.MarkAllDirty();
                         }
@@ -539,6 +545,11 @@ namespace FollowingSeasCoop.Runtime
                     catch (Exception e)
                     {
                         if (_updateErrors++ < 20) Plugin.Log.LogError("[Shipyard] Tick failed: " + e);
+                    }
+                    try { Chart.Tick(); }
+                    catch (Exception e)
+                    {
+                        if (_updateErrors++ < 20) Plugin.Log.LogError("[Chart] Tick failed: " + e);
                     }
                     string carried = Items.PopNotice();
                     if (carried != null) Flash(carried);
